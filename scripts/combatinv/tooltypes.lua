@@ -2,7 +2,7 @@
 --
 -- Every hand item belongs to one or more types (a Pick/Axe is both "axe" and
 -- "pick"). Each tool slot shows one type, or is an Any slot. Dropping a hand
--- item on an empty typed slot gives that slot the item's type, and it keeps it.
+-- item on an empty typed slot gives that slot the item's type until it's emptied.
 -- The slots themselves are saved by slots.lua.
 
 local Util = require("combatinv/util")
@@ -152,13 +152,14 @@ end
 -- Tool slots (saved in slots.lua)
 --------------------------------------------------------------------------
 
--- The type of each tool slot, by index: a type key, or nil for an Any slot
--- (which takes the type of the first tool put in it). Not a sequence: use
--- numeric indices up to ToolTypes.SlotCount(), not ipairs.
+-- The type each tool slot shows now, by index: the type a dropped tool gave it,
+-- else its own type, or nil for an Any slot (which takes the type of the first
+-- tool put in it). Not a sequence: use numeric indices up to
+-- ToolTypes.SlotCount(), not ipairs.
 function ToolTypes.GetSlots()
     local list = {}
     for i, slot in ipairs(Slots.List("tools")) do
-        list[i] = slot.type ~= "any" and slot.type or nil
+        list[i] = slot.dropped or (slot.type ~= "any" and slot.type or nil)
     end
     return list
 end
@@ -167,13 +168,15 @@ function ToolTypes.SlotCount()
     return #Slots.List("tools")
 end
 
--- Gives typed tool slot `index` the type `key`. Any slots are left alone.
+-- Typed tool slot `index` shows type `key` until its column is emptied (see
+-- ToolTypes.Restore). Any slots are left alone.
 function ToolTypes.SetType(index, key)
-    local slot = Slots.List("tools")[index]
-    if slot == nil or slot.type == "any" then
-        return false
-    end
-    return Slots.SetType("tools", index, key)
+    return Slots.SetDropped(index, key)
+end
+
+-- Tool slot `index` goes back to its own type. Returns true if it changed.
+function ToolTypes.Restore(index)
+    return Slots.SetDropped(index, nil)
 end
 
 -- The type to give a slot when this item is dropped on it: the first of the

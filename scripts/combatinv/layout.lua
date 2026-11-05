@@ -9,8 +9,9 @@
 -- top item is the active one (number keys, auto-tools), and when it's used up
 -- the rest move up. The player's slot list (slots.lua) says how many columns
 -- each section has and what type each one is. Sections:
---   tools    one column per tool slot. A typed slot (weapon, axe...) keeps its
---            type; an Any slot takes on the type of whatever lands in it first.
+--   tools    one column per tool slot. A typed slot (weapon, axe...) takes the
+--            type of a tool dropped in it while empty, until it's emptied
+--            again; an Any slot takes on the type of whatever lands in it first.
 --   food     one column per consumable slot: health, sanity or hunger.
 --   gear     hand, body, head. The top row is what's worn (not part of the
 --            queue); carried armour and hats queue underneath.
@@ -334,6 +335,14 @@ function Layout.Sync(player, lifted)
     for item, ghost in pairs(ghosts) do
         if not item:IsValid() or GetTime() - ghost.time > GHOST_TIME then
             ghosts[item] = nil
+        end
+    end
+
+    -- A typed tool column that's been emptied goes back to its slot's type
+    -- (a tool put in an empty column gives it that tool's type until then).
+    for c, column in ipairs(columns.tools) do
+        if #column == 0 and ToolTypes.Restore(c) then
+            Changed()
         end
     end
 

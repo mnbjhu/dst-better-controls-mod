@@ -70,8 +70,9 @@ Keys
   the same as right-clicking it. A key left empty means no key: nothing is
   bound.
 - **Tool types:** any of the tool types (weapon, ranged, staff, axe, pickaxe,
-  ...) or **Any**, which takes the type of the first tool put in it. A type the
-  player picks stays, even when the column is empty.
+  ...) or **Any**, which takes the type of the first tool put in it. Dropping a
+  tool in an empty typed column gives the column that tool's type until it's
+  emptied again; then it goes back to the type set in the editor.
 - **Consumable types:** Health, Sanity, Hunger or **Other**. Other is for food
   that doesn't belong under a stat, such as food with a downside.
 - **Where new food goes**, first match wins:

@@ -2,15 +2,18 @@
 -- type and key. It's saved on this computer, so it's the same in every world
 -- and on any server (see "The slot editor" in docs/DESIGN.md).
 --
---   tools     list of { type = <tool type key or "any">, key = "KEY_1" or nil }
+--   tools     list of { type = <tool type key or "any">, key = "KEY_1" or nil,
+--                       dropped = <tool type key> or nil }
+--             `dropped` is the type a typed slot took from a tool dropped in it
+--             while it was empty. It lasts until the column is emptied, then
+--             the slot shows its own `type` again.
 --   food      list of { type = "health" | "sanity" | "hunger", key = "KEY_H" or nil }
 --   generic   number of generic columns
 --   keys      { drawers = "KEY_B" or nil, cane = "KEY_LSHIFT" or nil }
 --
 -- Keys are stored but not bound here yet: modmain still binds them from
 -- Configure Mod. Until the in-game editor replaces those options, the layout
--- is rebuilt from them whenever they change, keeping the slot types the player
--- picked.
+-- is rebuilt from them whenever they change, keeping each slot's types.
 
 local Slots = {}
 
@@ -91,27 +94,25 @@ local function FromConfig(keep)
 
     local kept_tools = keep ~= nil and keep.tools or {}
     local old = keep == nil and OldToolTypes() or {}
-    local used = {}
     for i = 1, Clamp(config.tool_slots, "tools") do
-        local slot_type = kept_tools[i] ~= nil and kept_tools[i].type or old[i]
-        if slot_type == nil then
-            -- A new slot: the next default type no other slot has, else Any.
-            slot_type = "any"
-            if i <= #DEFAULT_TOOL_TYPES then
-                for _, t in ipairs(DEFAULT_TOOL_TYPES) do
-                    if not used[t] then
-                        slot_type = t
-                        break
-                    end
-                end
+        local slot_type, dropped
+        local kept = kept_tools[i]
+        if kept ~= nil then
+            slot_type, dropped = kept.type, kept.dropped
+        else
+            -- The first slots are weapon, ranged, staff and axe; the rest are Any.
+            slot_type = DEFAULT_TOOL_TYPES[i] or "any"
+            -- The old save held each typed slot's current type, which a dropped
+            -- tool may have changed: carry that over as the dropped type.
+            if old[i] ~= nil and slot_type ~= "any" and old[i] ~= slot_type then
+                dropped = old[i]
             end
         end
-        used[slot_type] = true
         local key = nil
         if config.number_keys and i <= 10 then
             key = "KEY_" .. tostring(i % 10)
         end
-        layout.tools[i] = { type = slot_type, key = key }
+        layout.tools[i] = { type = slot_type, key = key, dropped = dropped }
     end
 
     local kept_food = keep ~= nil and keep.food or nil
@@ -143,7 +144,8 @@ local function Clean(layout)
     local clean = { tools = {}, food = {}, keys = {}, config = layout.config }
     for _, slot in ipairs(type(layout.tools) == "table" and layout.tools or {}) do
         if type(slot) == "table" and type(slot.type) == "string" and #clean.tools < LIMITS.tools.max then
-            table.insert(clean.tools, { type = slot.type, key = KeyOrNil(slot.key) })
+            local dropped = slot.type ~= "any" and KeyOrNil(slot.dropped) or nil
+            table.insert(clean.tools, { type = slot.type, key = KeyOrNil(slot.key), dropped = dropped })
         end
     end
     for _, slot in ipairs(type(layout.food) == "table" and layout.food or {}) do
@@ -210,13 +212,33 @@ function Slots.Key(name)
     return Get().keys[name]
 end
 
--- Gives slot `index` of `section` the type `slot_type`. Returns true if it changed.
+-- Gives slot `index` of `section` the type `slot_type` (what the editor sets).
+-- Returns true if it changed.
 function Slots.SetType(section, index, slot_type)
     local slot = Get()[section][index]
-    if slot == nil or slot.type == slot_type then
+    if slot == nil or (slot.type == slot_type and slot.dropped == nil) then
         return false
     end
     slot.type = slot_type
+    slot.dropped = nil
+    Save()
+    return true
+end
+
+-- Tool slot `index` takes the type `key` from a dropped tool, or goes back to
+-- its own type when `key` is nil. Returns true if what it shows changed.
+function Slots.SetDropped(index, key)
+    local slot = Get().tools[index]
+    if slot == nil or slot.type == "any" then
+        return false
+    end
+    if key == slot.type then
+        key = nil
+    end
+    if slot.dropped == key then
+        return false
+    end
+    slot.dropped = key
     Save()
     return true
 end
@@ -228,7 +250,8 @@ function Slots.Debug()
         return key ~= nil and (key:gsub("^KEY_", "")) or "-"
     end
     for i, slot in ipairs(layout.tools) do
-        print(string.format("[CombatInventory] tool %d: %-10s key %s", i, slot.type, KeyName(slot.key)))
+        local dropped = slot.dropped ~= nil and (" (showing " .. slot.dropped .. " until emptied)") or ""
+        print(string.format("[CombatInventory] tool %d: %-10s key %s%s", i, slot.type, KeyName(slot.key), dropped))
     end
     for i, slot in ipairs(layout.food) do
         print(string.format("[CombatInventory] food %d: %-10s key %s", i, slot.type, KeyName(slot.key)))
