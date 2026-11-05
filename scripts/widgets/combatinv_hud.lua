@@ -247,12 +247,24 @@ function CombatHud:IsOpen()
     return self.open
 end
 
+-- The crafting menu's open/close sounds, played only when the drawers actually
+-- change state (a chest opening while they're already open stays quiet).
+local function DrawerSound(opening)
+    TheFrontEnd:GetSound():PlaySound(opening and "dontstarve/HUD/craft_open" or "dontstarve/HUD/craft_close")
+end
+
 function CombatHud:Open()
+    if not self.open then
+        DrawerSound(true)
+    end
     self.open = true
     self.opened_by_container = false
 end
 
 function CombatHud:Close()
+    if self.open then
+        DrawerSound(false)
+    end
     self.open = false
     self.opened_by_container = false
     if self.container ~= nil then
@@ -273,6 +285,7 @@ end
 function CombatHud:OpenFor(container)
     self.container = container
     if not self.open then
+        DrawerSound(true)
         self.open = true
         self.opened_by_container = true
     end
