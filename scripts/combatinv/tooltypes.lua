@@ -96,6 +96,15 @@ function ToolTypes.Label(key, example)
     return (key:gsub("^item:", ""))
 end
 
+-- Every known type as { key, label }, in order (for the slot editor).
+function ToolTypes.All()
+    local list = {}
+    for _, t in ipairs(TYPES) do
+        table.insert(list, { key = t.key, label = t.label })
+    end
+    return list
+end
+
 -- Number keys equip tool slots by position: 1 is the first slot, 0 the tenth.
 local number_keys = false
 

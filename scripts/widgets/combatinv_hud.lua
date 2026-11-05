@@ -4,7 +4,8 @@
 -- The drawers show layout.lua's columns: items stay where they were put. All
 -- drawers are the same height, the tallest column plus one free row to drop
 -- into. Closed, only the top row shows; opening (inventory key, or opening a
--- chest) springs the drawers up so every row shows.
+-- chest) springs the drawers up so every row shows, with an Edit button that
+-- opens the slot editor (screens/combatinv_slot_editor.lua).
 --
 -- Clicks follow vanilla's inventory slots:
 --   left: pick up (Ctrl: half the stack); holding an item: put it down here
@@ -1013,6 +1014,7 @@ function CombatHud:Rebuild()
     if self:GetTarget() ~= nil and generic_drawer ~= nil then
         self:AddChestButtons(generic_drawer)
     end
+    self:AddEditButton(drawer)
     self:PlaceDrawers()
     self:ChooseAnimSlots()
 end
@@ -1045,6 +1047,19 @@ function CombatHud:AddInspectButton(parent, x)
     button:SetScale(1.25)
     button:SetPosition(x, SLOT_Y - 7)
     self.inspect_button = button
+end
+
+-- Edit, at the left end on top of the drawers: opens the slot editor. It's in
+-- the part that springs up, so it only shows while the drawers are open.
+function CombatHud:AddEditButton(drawer)
+    local width = 120
+    local button = drawer.contents:AddChild(TEMPLATES.StandardButton(function()
+        local SlotEditor = require("screens/combatinv_slot_editor")
+        TheFrontEnd:PushScreen(SlotEditor(function() self:Refresh(true) end))
+    end, "Edit", { width, 52 }))
+    button:SetTextSize(24)
+    button:SetHoverText("Choose the drawer slots, their types and keys")
+    button:SetPosition(-drawer.width / 2 + width / 2, SLOT_Y + PLANK_TOP + 30)
 end
 
 -- Deposit and Take all, on top of the generic drawer while a chest is open.

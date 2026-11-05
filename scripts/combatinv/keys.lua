@@ -43,8 +43,19 @@ local function Lookup(code)
     return nil
 end
 
+local suspended = false
+
+-- While the slot editor is open its key presses are for picking keys, not for
+-- eating or equipping. Releases still go through (a held cane key lets go).
+function Keys.SetSuspended(value)
+    suspended = value
+end
+
 -- The raw key handler: TheInput:AddKeyHandler(Keys.OnKey).
 function Keys.OnKey(code, down)
+    if suspended and down then
+        return
+    end
     local kind, c, slot = Lookup(code)
     if kind == nil then
         return
