@@ -141,12 +141,23 @@ if grouped then
     end)
 
     -- Vanilla's inventory hotkeys (CONTROL_INV_1...) use whatever sits in that
-    -- slot of the vanilla bar. Skip them while one of the mod's keys is held,
-    -- so a slot's key only does what the slot says. Ctrl + number still
-    -- selects crafting pins.
+    -- slot of the vanilla bar. Skip one whose key is one of the mod's keys, so
+    -- a slot's key only does what the slot says. Ctrl + number still selects
+    -- crafting pins.
     local INV_CONTROLS = {}
     for i = 1, 10 do
-        INV_CONTROLS[G["CONTROL_INV_" .. i]] = true
+        INV_CONTROLS[G["CONTROL_INV_" .. i]] = i
+    end
+
+    -- The keyboard key bound to a control (in Options > Controls), or nil.
+    -- The control can arrive before the key press does, so this asks the
+    -- binding instead of which keys are down.
+    local function BoundKey(control)
+        local device, count, input = G.TheInputProxy:GetLocalizedControl(0, control, false, true)
+        if device == 1 and count == 1 then -- 1: keyboard and mouse
+            return input
+        end
+        return nil
     end
     local function IsKeyDown(code)
         return G.TheInput:IsKeyDown(code)
@@ -155,9 +166,16 @@ if grouped then
     AddClassPostConstruct("screens/playerhud", function(self)
         local OnControlInv = self.OnControl
         function self:OnControl(control, down)
-            if INV_CONTROLS[control] and not G.TheInput:IsControlPressed(G.CONTROL_CRAFTING_MODIFIER)
-                and Keys.OwnsHeldKey(IsKeyDown) then
-                return true
+            local n = INV_CONTROLS[control]
+            if n ~= nil and not G.TheInput:IsControlPressed(G.CONTROL_CRAFTING_MODIFIER) then
+                local key = BoundKey(control)
+                local skip = (key ~= nil and Keys.Owns(key)) or Keys.OwnsHeldKey(IsKeyDown)
+                if down then
+                    Keys.Log(string.format("vanilla hotkey %d (key %s): %s", n, tostring(key), skip and "skipped" or "left to vanilla"))
+                end
+                if skip then
+                    return true
+                end
             end
             return OnControlInv(self, control, down)
         end

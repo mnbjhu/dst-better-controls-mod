@@ -49,6 +49,9 @@ function Keys.OnKey(code, down)
     if kind == nil then
         return
     end
+    if down then
+        Keys.Log(string.format("key %d: %s%s", code, kind, c ~= nil and (" slot " .. c) or ""))
+    end
     if kind == "drawers" then
         if down and actions.drawers ~= nil then
             actions.drawers()
@@ -78,24 +81,61 @@ function Keys.OnKey(code, down)
     end
 end
 
--- Is one of the mod's keys held right now? Vanilla's inventory hotkeys
--- (CONTROL_INV_1...) are skipped while it is, so pressing a slot's key doesn't
--- also use whatever sits in that vanilla inventory slot. Shift, Alt and the
--- like don't count: they're held alongside other keys.
-function Keys.OwnsHeldKey(is_key_down)
-    local names = { Slots.Key("drawers"), Slots.Key("cane") }
+-- Codes of every key the mod uses, except Shift, Alt and the like (they're
+-- held alongside other keys, so they never stand in for a vanilla hotkey).
+local function OwnCodes()
+    local names = {}
+    for _, name in ipairs({ "drawers", "cane" }) do
+        table.insert(names, Slots.Key(name) or false)
+    end
     for _, section in ipairs({ "tools", "food" }) do
         for _, slot in ipairs(Slots.List(section)) do
             table.insert(names, slot.key or false)
         end
     end
+    local codes = {}
     for _, name in ipairs(names) do
         local code = name and not MODIFIERS[name] and Code(name) or nil
-        if code ~= nil and is_key_down(code) then
+        if code ~= nil then
+            table.insert(codes, code)
+        end
+    end
+    return codes
+end
+
+-- Is `code` one of the mod's keys? Vanilla's inventory hotkeys
+-- (CONTROL_INV_1...) bound to one are skipped, so pressing a slot's key
+-- doesn't also use whatever sits in that vanilla inventory slot.
+function Keys.Owns(code)
+    for _, own in ipairs(OwnCodes()) do
+        if own == code then
             return true
         end
     end
     return false
+end
+
+-- Is one of the mod's keys held right now? (A backup for Keys.Owns, in case
+-- the control's key can't be looked up.)
+function Keys.OwnsHeldKey(is_key_down)
+    for _, code in ipairs(OwnCodes()) do
+        if is_key_down(code) then
+            return true
+        end
+    end
+    return false
+end
+
+-- The first few key decisions go to the client log, to check key handling
+-- from a player's log without a console.
+local log_budget = 12
+local last_logged = nil
+function Keys.Log(message)
+    if log_budget > 0 and message ~= last_logged then
+        log_budget = log_budget - 1
+        last_logged = message
+        print("[CombatInventory] " .. message)
+    end
 end
 
 -- actions: { drawers = fn(), cane_down = fn(), cane_up = fn(), tool = fn(c),
