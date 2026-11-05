@@ -20,7 +20,7 @@ description = [[Button-driven hand slot and quick-eat.
 
 Client-only: works on any server.]]
 author = "James"
-version = "0.8.2"
+version = "0.8.4"
 api_version = 10
 
 dst_compatible = true

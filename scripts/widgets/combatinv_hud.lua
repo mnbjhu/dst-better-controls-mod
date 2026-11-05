@@ -44,8 +44,11 @@ local SEP = 12            -- gap between slots (vanilla SEP)
 local STEP = W + SEP      -- slot to slot, across and down
 local BOX_MARGIN = 32     -- plank edge to first slot
 local LANE = 40           -- between sections, where the border's notch hangs down
-local NOTCH_W = 120       -- notch pieces, menu units (art is 480x256 at 4x)
+local NOTCH_W = 120       -- divider patches, menu units (art is 480x256 at 4x)
 local NOTCH_H = 64
+local BORDER = 28         -- the plank's top border, ink lines included (inventory_filler.tex)
+local SPACER_W = 12       -- spacer tile, menu units (art is 48x1024 at 4x)
+local SPACER_H = 256
 local SLOT_Y = 68         -- top row's slot centres (vanilla out_pos: the one-row bar; in_pos is for two rows)
 local PLANK_TOP = 61      -- plank top edge above the top row
 local PIECE_W = 64        -- inventory_corner.tex / inventory_filler.tex
@@ -754,14 +757,22 @@ end
 -- down its right side); mirrored, it's the left end. The plain middle has a
 -- rim along its top. Below the rims both are plain all the way down.
 -- yscale < 0 flips the piece upside down (rims and ornaments at its bottom).
+--
+-- Sizes are set explicitly: both textures are 63x255 in the atlas, not 64x256,
+-- so scaling them by width/64 left the stretched middle ~20 units short, and a
+-- gap opened in the border where it meets each corner (above the first and
+-- last slots).
 local function PlankPiece(parent, width, y, yscale)
     local middle = parent:AddChild(Image(HUD_ATLAS, "inventory_filler.tex"))
-    middle:SetScale((width - 2 * PIECE_W + 2 * PIECE_OVERLAP) / PIECE_W, yscale, 1)
+    middle:SetSize(width - 2 * PIECE_W + 2 * PIECE_OVERLAP, PIECE_H)
+    middle:SetScale(1, yscale, 1)
     middle:SetPosition(0, y)
     local left = parent:AddChild(Image(HUD_ATLAS, "inventory_corner.tex"))
+    left:SetSize(PIECE_W, PIECE_H)
     left:SetScale(-1, yscale, 1)
     left:SetPosition(-width / 2 + PIECE_W / 2, y)
     local right = parent:AddChild(Image(HUD_ATLAS, "inventory_corner.tex"))
+    right:SetSize(PIECE_W, PIECE_H)
     right:SetScale(1, yscale, 1)
     right:SetPosition(width / 2 - PIECE_W / 2, y)
 end
@@ -789,28 +800,48 @@ local function SectionWidth(columns)
     return columns * W + (columns - 1) * SEP
 end
 
--- A notch in the top border between two sections: the panel behind it
--- (notch_background) with the border piece that has the notch built in
--- (notch_border) on top, both lined up with the plank's top edge. Their ends
--- match the plain border and panel, so they join flush. Nothing if the art
--- isn't loaded.
-local function AddNotch(parent, x)
-    if ART_ATLAS == nil or not TheSim:AtlasContains(ART_ATLAS, "notch_border.tex")
-        or not TheSim:AtlasContains(ART_ATLAS, "notch_background.tex") then
+-- A divider between two sections, drawn over the plank in this order:
+--   notch_background  patch for the panel behind it (left out of the atlas
+--                     when it's identical to the plain panel)
+--   spacer_tile       a line down the lane, tiled from under the border to
+--                     below the screen edge however far the drawer opens
+--   notch_border      patch for the border, carrying the ornament
+-- The patches only contain pixels that differ from the plain panel, so the
+-- game's own border and panel show everywhere else. Each piece is skipped if
+-- the art isn't loaded.
+local function AddDivider(parent, x, rise)
+    if ART_ATLAS == nil then
         return
     end
+    local function has(tex)
+        return TheSim:AtlasContains(ART_ATLAS, tex)
+    end
     local top = SLOT_Y + PLANK_TOP
-    for _, piece in ipairs({ "notch_background.tex", "notch_border.tex" }) do
-        local image = parent:AddChild(Image(ART_ATLAS, piece))
+    local function patch(tex)
+        local image = parent:AddChild(Image(ART_ATLAS, tex))
         image:SetSize(NOTCH_W, NOTCH_H)
         image:SetClickable(false)
         image:SetPosition(x, top - NOTCH_H / 2)
     end
+    if has("notch_background.tex") then
+        patch("notch_background.tex")
+    end
+    if has("spacer_tile.tex") then
+        local y = top - BORDER
+        local bottom = SCREEN_Y - rise * 1.2 - 20      -- the plank reaches this far down
+        while y > bottom do
+            local tile = parent:AddChild(Image(ART_ATLAS, "spacer_tile.tex"))
+            tile:SetSize(SPACER_W, SPACER_H)
+            tile:SetClickable(false)
+            tile:SetPosition(x, y - SPACER_H / 2)
+            y = y - SPACER_H
+        end
+    end
+    if has("notch_border.tex") then
+        patch("notch_border.tex")
+    end
 end
 
--- The cells of one section: rows 1..height in every column. While an item is
--- held, cells it can't go in are dimmed and free cells it can go in are lit,
--- so it's clear where it can be put down.
 function CombatHud:SectionCells(section, height)
     local player = self.owner
     local inventory = player.replica.inventory
@@ -927,7 +958,7 @@ function CombatHud:Rebuild()
         end
         x = x + spec.width
         if i < #specs then
-            AddNotch(notches, x + LANE / 2)
+            AddDivider(notches, x + LANE / 2, drawer.height)
             x = x + LANE
         end
     end

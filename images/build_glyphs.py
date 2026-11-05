@@ -141,38 +141,58 @@ u1, u2 = bx / ATLAS_W, (bx + blank.width) / ATLAS_W
 v1, v2 = 1 - (by + blank.height) / ATLAS_H, 1 - by / ATLAS_H
 elements.append(('slot_blank.tex', u1, u2, v1, v2))
 
-# Section notch: the border with a notch built in (notch_border.png) over the
-# panel behind it (notch_background.png), both generated at 480x256 = 120x64
-# menu units, drawn at every boundary between sections. Their ends match the
-# game's border and panel exactly. Stored at on-screen size (0.8325 px/unit).
+# Section dividers, generated at 4 px per menu unit as replacement patches for
+# the plain panel (see images/notch_plain_*_reference.png, cut from the panel as
+# the game draws it):
+#   notch_background.png  480x256 (120x64 units): the panel behind the divider
+#   notch_border.png      480x256 (120x64 units): the border with the ornament
+#   spacer_tile.png        48x1024 (12x256 units): a line down between sections, tiled
+# Each patch keeps only the pixels that differ from the plain reference (plus a
+# feathered margin), so the game's own border and panel show everywhere else and
+# no seam is possible. A patch identical to its reference is left out.
+# Stored at on-screen size (0.8325 px per unit), so the game draws them 1:1.
+PX = 0.8325
 NOTCH_A = os.path.join(mod_dir, 'images', 'notch_border.png')
 NOTCH_B = os.path.join(mod_dir, 'images', 'notch_background.png')
-PLAIN = os.path.join(mod_dir, 'images', 'notch_plain_reference.png')   # plain border+panel, same size
-if os.path.exists(NOTCH_A) and os.path.exists(NOTCH_B):
-    nw, nh = round(120 * 0.8325), round(64 * 0.8325)
-    a_img = np.asarray(Image.open(NOTCH_A).convert('RGBA')).astype(np.float32)
-    b_img = np.asarray(Image.open(NOTCH_B).convert('RGBA')).astype(np.float32)
-    plain = np.asarray(Image.open(PLAIN).convert('RGBA')).astype(np.float32)
-    # Only draw what's new; let the game's own border show everywhere else, so
-    # the join runs along an ink line instead of across the wood strip:
-    #   A (border): from the border's lower ink line down (y >= 92px at 4x)
-    #   B (panel):  below the border (y >= 112px)
-    rows = np.arange(256, dtype=np.float32)
-    a_img[..., 3] *= np.clip((rows - 84) / 8.0, 0, 1)[:, None]
-    b_img[..., 3] *= np.clip((rows - 104) / 8.0, 0, 1)[:, None]
-    # A: fade the outer 8 units (32px) into the border underneath, which in game
-    # is the vanilla middle piece stretched sideways (smeared grain).
-    ramp = np.clip(np.minimum(np.arange(480), np.arange(480)[::-1]) / 32.0, 0, 1)
-    a_img[..., 3] *= ramp[None, :]
-    x = bx + blank.width + GUTTER
-    for name, arr in (('notch_background.tex', b_img), ('notch_border.tex', a_img)):
-        im = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
-        im = im.resize((nw * 2, nh * 2), Image.LANCZOS).resize((nw, nh), Image.LANCZOS)
-        t = np.asarray(im).astype(np.float32); t[..., :3] *= t[..., 3:4] / 255     # premultiply
-        rgba.paste(Image.fromarray(np.clip(t, 0, 255).astype(np.uint8)), (x, by))
-        elements.append((name, x / ATLAS_W, (x + nw) / ATLAS_W, 1 - (by + nh) / ATLAS_H, 1 - by / ATLAS_H))
-        x += nw + GUTTER
-    print('notch pieces', nw, 'x', nh)
+PLAIN_A = os.path.join(mod_dir, 'images', 'notch_plain_border_reference.png')
+PLAIN_B = os.path.join(mod_dir, 'images', 'notch_plain_background_reference.png')
+SPACER = os.path.join(mod_dir, 'images', 'spacer_tile.png')
+
+def changed_only(img, ref, margin=10, feather=3.0):
+    # premultiplied comparison, so fully transparent pixels compare equal
+    pa = img[..., :3] * img[..., 3:4] / 255; pr = ref[..., :3] * ref[..., 3:4] / 255
+    diff = np.abs(pa - pr).sum(-1) + np.abs(img[..., 3] - ref[..., 3])
+    mask = Image.fromarray(((diff > 12) * 255).astype(np.uint8))
+    if mask.getbbox() is None:
+        return None
+    mask = mask.filter(ImageFilter.MaxFilter(2 * margin + 1)).filter(ImageFilter.GaussianBlur(feather))
+    out = img.copy(); out[..., 3] *= np.asarray(mask).astype(np.float32) / 255
+    return out
+
+def store(name, arr, w, h, x, y):
+    im = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+    im = im.resize((w * 2, h * 2), Image.LANCZOS).resize((w, h), Image.LANCZOS)
+    t = np.asarray(im).astype(np.float32); t[..., :3] *= t[..., 3:4] / 255     # premultiply
+    rgba.paste(Image.fromarray(np.clip(t, 0, 255).astype(np.uint8)), (x, y))
+    elements.append((name, x / ATLAS_W, (x + w) / ATLAS_W, 1 - (y + h) / ATLAS_H, 1 - y / ATLAS_H))
+
+x = bx + blank.width + GUTTER
+nw, nh = round(120 * PX), round(64 * PX)
+for name, path, ref in (('notch_background.tex', NOTCH_B, PLAIN_B), ('notch_border.tex', NOTCH_A, PLAIN_A)):
+    if not (os.path.exists(path) and os.path.exists(ref)):
+        continue
+    img = np.asarray(Image.open(path).convert('RGBA')).astype(np.float32)
+    patch = changed_only(img, np.asarray(Image.open(ref).convert('RGBA')).astype(np.float32))
+    if patch is None:
+        print(name, 'identical to the plain panel: left out')
+        continue
+    store(name, patch, nw, nh, x, by)
+    x += nw + GUTTER
+    print(name, 'patch', nw, 'x', nh)
+if os.path.exists(SPACER):
+    sw, sh = max(1, round(12 * PX)), round(256 * PX)
+    store('spacer_tile.tex', np.asarray(Image.open(SPACER).convert('RGBA')).astype(np.float32), sw, sh, ATLAS_W - sw - GUTTER, 0)
+    print('spacer', sw, 'x', sh)
 if preview_dir:
     rgba.save(os.path.join(preview_dir, 'glyph_atlas.png'))
 
