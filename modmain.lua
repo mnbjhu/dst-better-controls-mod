@@ -14,10 +14,27 @@ local HandSlot = G.require("combatinv/handslot")
 local Travel = G.require("combatinv/travel")
 local Tools = G.require("combatinv/tools")
 local QuickEat = G.require("combatinv/quickeat")
+local Slots = G.require("combatinv/slots")
+local Keys = G.require("combatinv/keys")
 
-local function GetKey(option)
-    return G[GetModConfigData(option)]
-end
+local grouped = GetModConfigData("grouped_hud")
+local travel_mode = GetModConfigData("travel_mode")
+
+-- The drawer layout and every key the mod uses (slots.lua) are built from
+-- these options until the in-game slot editor replaces them. The layout is
+-- loaded the first time it's needed, so nothing is read from disk here.
+Slots.SetConfig({
+    tool_slots = GetModConfigData("tool_slots"),
+    number_keys = GetModConfigData("weapon_keys"),
+    eat_keys =
+    {
+        health = GetModConfigData("eat_health_key"),
+        sanity = GetModConfigData("eat_sanity_key"),
+        hunger = GetModConfigData("eat_hunger_key"),
+    },
+    inventory_key = GetModConfigData("inventory_key"),
+    cane_key = travel_mode == "hold" and GetModConfigData("travel_key") or nil,
+})
 
 -- Tools: the right tool for the target, and weapons for attacks.
 -- Installed before travel so travel's hooks wrap these ones.
@@ -30,27 +47,48 @@ end
 
 -- Travel: the cane comes out for walking ("auto") or while a key is held ("hold").
 -- Either way, clicks and the action button still offer the previous item's actions.
-local travel_mode = GetModConfigData("travel_mode")
 if travel_mode ~= "off" then
     Travel.Install(env, travel_mode)
 end
-if travel_mode == "hold" then
-    local travel_key = GetKey("travel_key")
-    G.TheInput:AddKeyDownHandler(travel_key, Travel.HoldDown)
-    G.TheInput:AddKeyUpHandler(travel_key, Travel.HoldUp)
+
+-- Keys, all from the slot list (keys.lua):
+--   drawers key      opens the drawers (grouped HUD)
+--   cane key         held for the cane (travel "hold" mode)
+--   tool slot keys   equip that tool column, again to cycle (grouped HUD)
+--   consumable keys  eat the best food for the slot's stat; an Other slot's
+--                    key eats the top item in that slot (grouped HUD)
+local function Layout()
+    return G.require("combatinv/layout")
 end
 
--- Quick-eat, one key per stat.
-G.TheInput:AddKeyDownHandler(GetKey("eat_health_key"), function() QuickEat.Eat("health") end)
-G.TheInput:AddKeyDownHandler(GetKey("eat_sanity_key"), function() QuickEat.Eat("sanity") end)
-G.TheInput:AddKeyDownHandler(GetKey("eat_hunger_key"), function() QuickEat.Eat("hunger") end)
+local function EatFromColumn(c)
+    local column = Layout().Columns("food")[c]
+    QuickEat.EatChosen(column ~= nil and column[1] or nil)
+end
 
--- Number keys replace vanilla's slot hotkeys.
--- With the grouped HUD, each number equips that tool slot (1 = first slot), so
--- they follow whatever types you've put in the slots. Without it, 1-3 equip
+Keys.Install({
+    drawers = grouped and function() G.require("combatinv/hudmode").Toggle() end or nil,
+    cane_down = travel_mode == "hold" and Travel.HoldDown or nil,
+    cane_up = travel_mode == "hold" and Travel.HoldUp or nil,
+    tool = grouped and function(c) Layout().EquipColumn(c) end or nil,
+    food = function(c, food_type)
+        if food_type == "other" then
+            if grouped then
+                EatFromColumn(c)
+            end
+        else
+            QuickEat.Eat(food_type)
+        end
+    end,
+    crafting_modifier = function()
+        return G.TheInput:IsControlPressed(G.CONTROL_CRAFTING_MODIFIER)
+    end,
+})
+G.TheInput:AddKeyHandler(Keys.OnKey)
+
+-- Without the grouped HUD there are no tool columns: number keys 1-3 equip
 -- melee / ranged / magic and the other numbers keep their vanilla behaviour.
-if GetModConfigData("weapon_keys") then
-    local grouped = GetModConfigData("grouped_hud")
+if GetModConfigData("weapon_keys") and not grouped then
     local NUMBER_CONTROLS =
     {
         G.CONTROL_INV_1, G.CONTROL_INV_2, G.CONTROL_INV_3, G.CONTROL_INV_4, G.CONTROL_INV_5,
@@ -63,9 +101,6 @@ if GetModConfigData("weapon_keys") then
     end
 
     local function Press(index)
-        if grouped then
-            return G.require("combatinv/layout").EquipColumn(index)
-        end
         return WEAPONS[index] ~= nil and HandSlot.EquipCategory(WEAPONS[index])
     end
 
@@ -86,31 +121,11 @@ end
 
 -- Grouped HUD: replaces the vanilla inventory bar with drawers. The inventory
 -- key opens them, and they also open when you open a chest.
-if GetModConfigData("grouped_hud") then
+if grouped then
     local CombatHud = G.require("widgets/combatinv_hud")
     local HudMode = G.require("combatinv/hudmode")
     local ToolTypes = G.require("combatinv/tooltypes")
     ToolTypes.SetNumberKeys(GetModConfigData("weapon_keys"))
-
-    -- The drawer layout (slots.lua) is built from these options until the
-    -- in-game slot editor replaces them. It's loaded when the drawers first
-    -- need it, so nothing is read from disk here.
-    G.require("combatinv/slots").SetConfig({
-        tool_slots = GetModConfigData("tool_slots"),
-        number_keys = GetModConfigData("weapon_keys"),
-        eat_keys =
-        {
-            health = GetModConfigData("eat_health_key"),
-            sanity = GetModConfigData("eat_sanity_key"),
-            hunger = GetModConfigData("eat_hunger_key"),
-        },
-        inventory_key = GetModConfigData("inventory_key"),
-        cane_key = GetModConfigData("travel_mode") == "hold" and GetModConfigData("travel_key") or nil,
-    })
-
-    local function KeyLabel(option)
-        return (GetModConfigData(option):gsub("^KEY_", ""))
-    end
 
     AddClassPostConstruct("widgets/controls", function(self)
         local art_atlas = MODROOT .. "images/combatinv_slots.xml"
@@ -118,9 +133,35 @@ if GetModConfigData("grouped_hud") then
             print("[CombatInventory] slot art missing, using text labels: " .. art_atlas)
             art_atlas = nil
         end
-        HudMode.Install(self, CombatHud, { inventory_key = KeyLabel("inventory_key"), art_atlas = art_atlas })
+        local drawers_key = Slots.Key("drawers")
+        HudMode.Install(self, CombatHud, {
+            inventory_key = drawers_key ~= nil and (drawers_key:gsub("^KEY_", "")) or nil,
+            art_atlas = art_atlas,
+        })
     end)
-    G.TheInput:AddKeyDownHandler(GetKey("inventory_key"), HudMode.Toggle)
+
+    -- Vanilla's inventory hotkeys (CONTROL_INV_1...) use whatever sits in that
+    -- slot of the vanilla bar. Skip them while one of the mod's keys is held,
+    -- so a slot's key only does what the slot says. Ctrl + number still
+    -- selects crafting pins.
+    local INV_CONTROLS = {}
+    for i = 1, 10 do
+        INV_CONTROLS[G["CONTROL_INV_" .. i]] = true
+    end
+    local function IsKeyDown(code)
+        return G.TheInput:IsKeyDown(code)
+    end
+
+    AddClassPostConstruct("screens/playerhud", function(self)
+        local OnControlInv = self.OnControl
+        function self:OnControl(control, down)
+            if INV_CONTROLS[control] and not G.TheInput:IsControlPressed(G.CONTROL_CRAFTING_MODIFIER)
+                and Keys.OwnsHeldKey(IsKeyDown) then
+                return true
+            end
+            return OnControlInv(self, control, down)
+        end
+    end)
 
     AddClassPostConstruct("screens/playerhud", function(self)
         local OpenContainer = self.OpenContainer

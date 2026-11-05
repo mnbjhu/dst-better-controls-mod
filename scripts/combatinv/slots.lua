@@ -33,14 +33,17 @@ local LIMITS =
 }
 
 -- Configure Mod values the layout is built from (see Slots.SetConfig).
-local config =
-{
-    tool_slots = 6,
-    number_keys = true,
-    eat_keys = { health = "KEY_H", sanity = "KEY_J", hunger = "KEY_K" },
-    inventory_key = "KEY_B",
-    cane_key = nil,
-}
+local function DefaultConfig()
+    return
+    {
+        tool_slots = 6,
+        number_keys = true,
+        eat_keys = { health = "KEY_H", sanity = "KEY_J", hunger = "KEY_K" },
+        inventory_key = "KEY_B",
+        cane_key = nil,
+    }
+end
+local config = DefaultConfig()
 
 local data = nil -- loaded layout
 
@@ -193,7 +196,9 @@ local function Get()
 end
 
 -- The Configure Mod values the layout follows. Call before the layout is used.
+-- Values left out (or nil, like no cane key) take their defaults.
 function Slots.SetConfig(values)
+    config = DefaultConfig()
     for k, v in pairs(values) do
         config[k] = v
     end

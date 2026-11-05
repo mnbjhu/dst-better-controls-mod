@@ -159,16 +159,20 @@ local STAT_LABEL = { health = "health", sanity = "sanity", hunger = "hunger" }
 
 local last_eat_time = 0
 
-function QuickEat.Eat(stat)
-    if not Util.CanUseHotkeys() then
-        return
-    end
-    -- Ignore key repeat while the key is held.
+-- Ignore key repeat while an eat key is held. True if this press should eat.
+local function FirstPress()
     local now = GetTime()
     if now - last_eat_time < 0.3 then
-        return
+        return false
     end
     last_eat_time = now
+    return true
+end
+
+function QuickEat.Eat(stat)
+    if not Util.CanUseHotkeys() or not FirstPress() then
+        return
+    end
 
     local player = ThePlayer
     local item, need = QuickEat.FindBest(player, stat)
@@ -240,6 +244,20 @@ end
 function QuickEat.EatItem(player, item)
     Util.ReturnActiveItem(player)
     Util.UseItem(player, item)
+end
+
+-- An Other slot's key: eats `item` (the top of that slot) as it is, the same
+-- as right-clicking it, even food quick-eat would never pick.
+function QuickEat.EatChosen(item)
+    if not Util.CanUseHotkeys() or not FirstPress() then
+        return
+    end
+    local player = ThePlayer
+    if item == nil then
+        Util.Say(player, "I have nothing there to eat.")
+        return
+    end
+    QuickEat.EatItem(player, item)
 end
 
 -- Console helper: ci_food() prints what quick-eat knows about the food you carry.
