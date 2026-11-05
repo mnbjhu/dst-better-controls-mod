@@ -570,7 +570,11 @@ function CombatHud:PutDown(cell, target)
     -- Lifted from the drawers: move it here, then put it back in the inventory.
     -- Taken out of an inventory slot, its own slot is free, so there's always
     -- room; taken off (worn or in hand) it needs a free slot.
-    if active == self.own_active and Layout.Has(active) then
+    -- Dropping onto a stack it can join is not a move: fall through to
+    -- PlaceOnto so the stacks combine instead of the two items swapping.
+    local stackable = target ~= nil and target ~= active and target.replica.stackable or nil
+    local joins = stackable ~= nil and not stackable:IsFull() and stackable:CanStackWith(active)
+    if active == self.own_active and Layout.Has(active) and not joins then
         if self.own_from_equip and not Util.HasRoomFor(player, active) then
             NegativeSound()
         elseif Layout.Move(player, active, cell.section, cell.col, cell.index) then
