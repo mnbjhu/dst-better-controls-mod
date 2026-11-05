@@ -90,8 +90,23 @@ if GetModConfigData("grouped_hud") then
     local CombatHud = G.require("widgets/combatinv_hud")
     local HudMode = G.require("combatinv/hudmode")
     local ToolTypes = G.require("combatinv/tooltypes")
-    G.require("combatinv/layout").Configure(GetModConfigData("tool_slots"))
     ToolTypes.SetNumberKeys(GetModConfigData("weapon_keys"))
+
+    -- The drawer layout (slots.lua) is built from these options until the
+    -- in-game slot editor replaces them. It's loaded when the drawers first
+    -- need it, so nothing is read from disk here.
+    G.require("combatinv/slots").SetConfig({
+        tool_slots = GetModConfigData("tool_slots"),
+        number_keys = GetModConfigData("weapon_keys"),
+        eat_keys =
+        {
+            health = GetModConfigData("eat_health_key"),
+            sanity = GetModConfigData("eat_sanity_key"),
+            hunger = GetModConfigData("eat_hunger_key"),
+        },
+        inventory_key = GetModConfigData("inventory_key"),
+        cane_key = GetModConfigData("travel_mode") == "hold" and GetModConfigData("travel_key") or nil,
+    })
 
     local function KeyLabel(option)
         return (GetModConfigData(option):gsub("^KEY_", ""))
@@ -138,3 +153,5 @@ end
 G.ci_food = QuickEat.Debug
 -- ci_tools() shows which tool each job would use and what attacks would switch to.
 G.ci_tools = Tools.Debug
+-- ci_slots() prints the drawer layout: each slot's type and key.
+G.ci_slots = G.require("combatinv/slots").Debug
