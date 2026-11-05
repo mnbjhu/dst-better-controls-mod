@@ -1,0 +1,11 @@
+<Atlas>
+  <Texture filename="combatinv_headers.tex" />
+  <Elements>
+    <Element name="inset_tools.tex" u1="0.007812500" u2="0.257812500" v1="0.914062500" v2="0.992187500" />
+    <Element name="inset_food.tex" u1="0.273437500" u2="0.523437500" v1="0.914062500" v2="0.992187500" />
+    <Element name="inset_gear.tex" u1="0.007812500" u2="0.257812500" v1="0.820312500" v2="0.898437500" />
+    <Element name="inset_generic.tex" u1="0.273437500" u2="0.523437500" v1="0.820312500" v2="0.898437500" />
+    <Element name="divider_fork.tex" u1="0.546875000" u2="0.671875000" v1="0.886718750" v2="0.992187500" />
+    <Element name="divider_stem.tex" u1="0.687500000" u2="0.718750000" v1="0.492187500" v2="0.992187500" />
+  </Elements>
+</Atlas>

@@ -198,7 +198,7 @@ function SlotEditor:Build()
     y = y - 10
     local generic = Slots.GenericColumns()
     local min, max = Slots.Limits("generic")
-    self:Label("Generic columns", right_x, y, 220, UICOLOURS.GOLD, 32)
+    self:Label("Supplies columns", right_x, y, 220, UICOLOURS.GOLD, 32)
     local minus = self:Button("-", right_x + 245, y, 40, function()
         Slots.SetGeneric(generic - 1)
         self:RebuildSoon()

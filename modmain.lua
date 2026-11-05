@@ -8,6 +8,8 @@ Assets =
 {
     Asset("ATLAS", "images/combatinv_slots.xml"),
     Asset("IMAGE", "images/combatinv_slots.tex"),
+    Asset("ATLAS", "images/combatinv_headers.xml"),
+    Asset("IMAGE", "images/combatinv_headers.tex"),
 }
 
 local HandSlot = G.require("combatinv/handslot")
@@ -137,6 +139,7 @@ if grouped then
         HudMode.Install(self, CombatHud, {
             inventory_key = drawers_key ~= nil and (drawers_key:gsub("^KEY_", "")) or nil,
             art_atlas = art_atlas,
+            header_atlas = MODROOT .. "images/combatinv_headers.xml",
         })
     end)
 
