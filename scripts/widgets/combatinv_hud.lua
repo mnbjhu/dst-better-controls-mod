@@ -4,7 +4,8 @@
 -- The drawers show layout.lua's columns: items stay where they were put. All
 -- drawers are the same height, the tallest column plus one free row to drop
 -- into. Closed, only the top row shows; opening (inventory key, or opening a
--- chest) springs the drawers up so every row shows.
+-- chest) springs the drawers up so every row shows, with an Edit button that
+-- opens the slot editor (screens/combatinv_slot_editor.lua).
 --
 -- Clicks follow vanilla's inventory slots:
 --   left: pick up (Ctrl: half the stack); holding an item: put it down here
@@ -47,7 +48,7 @@ local W = 68              -- slot size
 local SEP = 12            -- gap between slots (vanilla SEP)
 local STEP = W + SEP      -- slot to slot, across and down
 local BOX_MARGIN = 32     -- plank edge to first slot
-local LANE = 40           -- between sections, where the border's notch hangs down
+local LANE = 32           -- breathing room around the forked section dividers
 local NOTCH_W = 120       -- divider patches, menu units (art is 480x256 at 4x)
 local NOTCH_H = 64
 local BORDER = 28         -- the plank's top border, ink lines included (inventory_filler.tex)
@@ -78,6 +79,43 @@ local EQUIP_BG =
 local ACCENT = HudSlot.ACCENT
 
 local SECTIONS = { "tools", "food", "gear", "generic" }
+
+-- Tiny engraved sections of the upper rail. The texture shoulders fade to
+-- transparent, leaving the exact vanilla border visible at both joins.
+local SECTION_CRESTS =
+{
+    tools = { icon = "tab_tool.tex" },
+    food = { icon = "tab_foodprocessing.tex" },
+    gear = { icon = "tab_dress.tex" },
+    generic = { icon = "tab_refine.tex" },
+}
+local HEADER_ATLAS = nil
+local HEADER_WIDTH = 96
+local HEADER_HEIGHT = 28
+local ACTION_Y = SLOT_Y + PLANK_TOP + 32
+
+local function HasHeader(tex)
+    return HEADER_ATLAS ~= nil and TheSim:AtlasContains(HEADER_ATLAS, tex)
+end
+
+local function AddSectionCrest(parent, section, x, section_width)
+    local spec = SECTION_CRESTS[section]
+    local crest = parent:AddChild(Widget("section_crest_" .. section))
+    local width = math.min(HEADER_WIDTH, section_width)
+    local height = HEADER_HEIGHT
+    crest:SetPosition(x, SLOT_Y + PLANK_TOP - 12)
+    -- Decorations never take clicks or controller focus from inventory slots.
+    if HasHeader("inset_" .. section .. ".tex") then
+        local image = crest:AddChild(Image(HEADER_ATLAS, "inset_" .. section .. ".tex"))
+        image:SetSize(width, height)
+        image:SetClickable(false)
+    else
+        local icon = crest:AddChild(Image(HUD_ATLAS, spec.icon))
+        icon:SetSize(20, 20)
+        icon:SetTint(0.65, 0.55, 0.4, 1)
+        icon:SetClickable(false)
+    end
+end
 
 -- Pictures for empty columns (images/combatinv_slots.xml, passed in by
 -- modmain as options.art_atlas). Without it, the columns show text labels.
@@ -114,6 +152,10 @@ local CombatHud = Class(Widget, function(self, owner, options)
     self.owner = owner
     self.inventory_key = options.inventory_key or "B"
     ART_ATLAS = options.art_atlas
+    HEADER_ATLAS = options.header_atlas
+    if not HasHeader("inset_tools.tex") then
+        print("[CombatInventory] border insets not loaded: restart the game once to load the revised artwork")
+    end
 
     self.open = false
     self.progress = 0             -- 0 closed .. 1 fully open, animated
@@ -842,6 +884,21 @@ end
 -- game's own border and panel show everywhere else. Each piece is skipped if
 -- the art isn't loaded.
 local function AddDivider(parent, x, rise)
+    if HasHeader("divider_fork.tex") and HasHeader("divider_stem.tex") then
+        local top = SLOT_Y + PLANK_TOP
+        local fork_w, fork_h = 48, 40.5
+        local bottom = SCREEN_Y - rise * 1.2 - 20
+        local stem_top = top - fork_h + 6
+        local stem = parent:AddChild(Image(HEADER_ATLAS, "divider_stem.tex"))
+        stem:SetSize(10, stem_top - bottom)
+        stem:SetPosition(x, (stem_top + bottom) / 2)
+        stem:SetClickable(false)
+        local fork = parent:AddChild(Image(HEADER_ATLAS, "divider_fork.tex"))
+        fork:SetSize(fork_w, fork_h)
+        fork:SetPosition(x, top - fork_h / 2)
+        fork:SetClickable(false)
+        return
+    end
     if ART_ATLAS == nil then
         return
     end
@@ -979,7 +1036,9 @@ function CombatHud:Rebuild()
     local handle = drawer.widget:AddChild(Widget("top_row"))
     local x = -total / 2 + BOX_MARGIN
     for i, spec in ipairs(specs) do
-        local first = x + W / 2
+        AddSectionCrest(handle, spec.section, x + spec.width / 2, spec.width)
+        local slots_width = spec.columns * W + (spec.columns - 1) * SEP
+        local first = x + (spec.width - slots_width) / 2 + W / 2
         for _, cell in ipairs(spec.cells) do
             cell.opts.scale = 1
             local parent = cell.row == 1 and handle or drawer.contents
@@ -1013,6 +1072,7 @@ function CombatHud:Rebuild()
     if self:GetTarget() ~= nil and generic_drawer ~= nil then
         self:AddChestButtons(generic_drawer)
     end
+    self:AddEditButton(drawer)
     self:PlaceDrawers()
     self:ChooseAnimSlots()
 end
@@ -1047,15 +1107,28 @@ function CombatHud:AddInspectButton(parent, x)
     self.inspect_button = button
 end
 
+-- Edit, at the left end on top of the drawers: opens the slot editor. It's in
+-- the part that springs up, so it only shows while the drawers are open.
+function CombatHud:AddEditButton(drawer)
+    local width = 96
+    local button = drawer.contents:AddChild(TEMPLATES.StandardButton(function()
+        local SlotEditor = require("screens/combatinv_slot_editor")
+        TheFrontEnd:PushScreen(SlotEditor(function() self:Refresh(true) end))
+    end, "Edit", { width, 52 }))
+    button:SetTextSize(24)
+    button:SetHoverText("Choose the drawer slots, their types and keys")
+    button:SetPosition(-drawer.width / 2 + width / 2, ACTION_Y)
+end
+
 -- Deposit and Take all, on top of the generic drawer while a chest is open.
 -- They're children of the drawer, so they ride up with it.
 function CombatHud:AddChestButtons(drawer)
-    local y = SLOT_Y + PLANK_TOP + 30
+    local y = ACTION_Y
     local right = drawer.width / 2
     local buttons =
     {
-        { "Take all", function() self:TakeAll() end, 140 },
-        { "Deposit", function() self:DepositMaterials() end, 140 },
+        { "Take all", function() self:TakeAll() end, 128 },
+        { "Deposit", function() self:DepositMaterials() end, 128 },
     }
     for _, spec in ipairs(buttons) do
         local label, fn, width = unpack(spec)

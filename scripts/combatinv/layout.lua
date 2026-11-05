@@ -67,6 +67,56 @@ function Layout.Configure()
     Reset()
 end
 
+-- Items in a column that's going away: forgotten here, so the next Sync
+-- places them again by the usual rules.
+local function Forget(column)
+    for _, item in ipairs(column) do
+        where[item] = nil
+        ghosts[item] = nil
+    end
+end
+
+-- The slot editor changed the slot list: change the columns to match, keeping
+-- every other item where it is.
+Slots.OnChanged(function(change)
+    if columns == nil then
+        return
+    end
+    local list = change.section ~= nil and columns[change.section] or nil
+    if change.op == "reset" then
+        Reset()
+        return
+    elseif change.op == "add" then
+        table.insert(list, change.index, {})
+    elseif change.op == "remove" then
+        Forget(list[change.index])
+        table.remove(list, change.index)
+    elseif change.op == "move" then
+        list[change.index], list[change.to] = list[change.to], list[change.index]
+    elseif change.op == "generic" then
+        while #columns.generic < change.to do
+            table.insert(columns.generic, {})
+        end
+        while #columns.generic > change.to do
+            Forget(table.remove(columns.generic))
+        end
+    end
+    -- Column numbers moved: fix up where items think they are. Remembered
+    -- cells of items that left may point at the wrong column now.
+    if change.op ~= "type" and change.op ~= "key" then
+        ghosts = {}
+    end
+    for section, cols in pairs(columns) do
+        for c, column in ipairs(cols) do
+            for _, item in ipairs(column) do
+                where[item] = { section = section, col = c }
+            end
+        end
+    end
+    pending = nil
+    version = version + 1
+end)
+
 function Layout.Version()
     return version
 end
