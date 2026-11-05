@@ -7,7 +7,8 @@
 --             `dropped` is the type a typed slot took from a tool dropped in it
 --             while it was empty. It lasts until the column is emptied, then
 --             the slot shows its own `type` again.
---   food      list of { type = "health" | "sanity" | "hunger", key = "KEY_H" or nil }
+--   food      list of { type = "health" | "sanity" | "hunger" | "other", key = "KEY_H" or nil }
+--             "other" holds food with a downside, and food whose stat has no slot.
 --   generic   number of generic columns
 --   keys      { drawers = "KEY_B" or nil, cane = "KEY_LSHIFT" or nil }
 --
@@ -22,7 +23,7 @@ local OLD_TOOL_SAVE = "combatinv_toolslots" -- tool types only, before slots.lua
 
 local DEFAULT_TOOL_TYPES = { "melee", "ranged", "magic", "axe" }
 local DEFAULT_FOOD = { "health", "sanity", "hunger" }
-local FOOD_TYPES = { health = true, sanity = true, hunger = true }
+local FOOD_TYPES = { health = true, sanity = true, hunger = true, other = true }
 
 local LIMITS =
 {

@@ -12,7 +12,7 @@
 --   tools    one column per tool slot. A typed slot (weapon, axe...) takes the
 --            type of a tool dropped in it while empty, until it's emptied
 --            again; an Any slot takes on the type of whatever lands in it first.
---   food     one column per consumable slot: health, sanity or hunger.
+--   food     one column per consumable slot: health, sanity, hunger or other.
 --   gear     hand, body, head. The top row is what's worn (not part of the
 --            queue); carried armour and hats queue underneath.
 --   generic  anything. (New food is placed in the food columns, but the
@@ -22,8 +22,9 @@
 --   hand items: a non-empty tool column of the same type, else an empty
 --     column whose set type fits (an Any column fits anything),
 --     else generic
---   food: a food column already holding the same food, else the first column
---     for its best stat, else generic
+--   food: a food column already holding the same food; else food with a
+--     downside goes in the first Other column; else the first column for its
+--     best stat; else the first Other column; else generic
 --   gear: under its equip slot
 --   everything else: the shortest generic column
 -- An item that left recently (thrown boomerang, dropped and picked up again)
@@ -37,7 +38,7 @@ local Slots = require("combatinv/slots")
 
 local Layout = {}
 
-local FOOD_LABELS = { health = "HP", sanity = "San", hunger = "Hun" }
+local FOOD_LABELS = { health = "HP", sanity = "San", hunger = "Hun", other = "Other" }
 local GEAR_SLOTS = { EQUIPSLOTS.HANDS, EQUIPSLOTS.BODY, EQUIPSLOTS.HEAD }
 local GHOST_TIME = 60       -- seconds an item's old cell is remembered
 
@@ -204,13 +205,26 @@ local function PlaceFood(player, item)
             end
         end
     end
-    local key = QuickEat.GetFoodColumn(player, item)
-    for c, slot in ipairs(Slots.List("food")) do
-        if slot.type == key then
-            return "food", c
+    local slots = Slots.List("food")
+    local function FirstOfType(food_type)
+        for c, slot in ipairs(slots) do
+            if slot.type == food_type then
+                return c
+            end
         end
+        return nil
     end
-    -- No slot for its stat (or no food slots at all).
+    -- Food with a downside (the food quick-eat never eats: monster meat, rot,
+    -- anything that costs health or sanity) goes in an Other slot if there is one.
+    local other = FirstOfType("other")
+    if other ~= nil and QuickEat.GetFoodGroup(player, item) == "bad" then
+        return "food", other
+    end
+    local c = FirstOfType(QuickEat.GetFoodColumn(player, item)) or other
+    if c ~= nil then
+        return "food", c
+    end
+    -- No slot for its stat and no Other slot (or no food slots at all).
     return "generic", ShortestGeneric()
 end
 
@@ -464,7 +478,7 @@ function Layout.ToolColumnLabel(c)
     return "Tool"
 end
 
--- Food column c's stat ("health", "sanity", "hunger") and its short label.
+-- Food column c's type ("health", "sanity", "hunger", "other") and its short label.
 function Layout.FoodColumn(c)
     local slot = Slots.List("food")[c]
     if slot == nil then
