@@ -31,7 +31,11 @@ where they always know where things are.
 5. **Every feature can be turned off.** Each feature has an option, and with it
    off the game behaves like vanilla. Shift + B gets the vanilla bar back at any
    time.
-6. **Predictable over clever.** When the mod picks something for the player
+6. **Options are for behaviour, not numbers.** A choice becomes an option when
+   reasonable players want the mod to *behave* differently: on or off, or a
+   different way of working. A number that only needs one good value gets a
+   good default instead. This keeps the config screen short enough to read.
+7. **Predictable over clever.** When the mod picks something for the player
    (a tool, a food, a slot), the rule should be one they could explain. The
    `ci_food()` and `ci_tools()` console helpers exist so the choice can be
    checked.
@@ -53,7 +57,4 @@ milestone. When one is settled, the answer moves into the sections above.
 
 - **Controllers.** The drawers are built for mouse and keyboard. Should
   controllers get the drawers, or always fall back to the vanilla bar?
-- **How much to configure.** Which choices are worth an option, and which
-  should just have one good default? Too many options make the config screen
-  hard to read.
 - **Default keys.** H, J, K and B may clash with keys other popular mods use.
