@@ -39,6 +39,46 @@ where they always know where things are.
    (a tool, a food, a slot), the rule should be one they could explain. The
    `ci_food()` and `ci_tools()` console helpers exist so the choice can be
    checked.
+8. **Set things where you use them.** The drawer layout and its keys are edited
+   in game, in the slot editor. Configure Mod only turns features on and off.
+
+## The slot editor
+
+The drawers are a list of slots the player builds, and each slot carries its
+own key. It's edited in game from an Edit button on the drawers, because DST's
+Configure Mod screen can only show dropdowns.
+
+```
+Tools
+  Slot 1   key: 1   type: Weapon    ▲ ▼  ✕
+  Slot 2   key: 2   type: Axe       ▲ ▼  ✕
+  + Add slot
+Consumables
+  Slot 1   key: H   type: Health    ▲ ▼  ✕
+  Slot 2   key: –   type: Any food  ▲ ▼  ✕
+  + Add slot
+Generic          columns: 4   − +
+Gear             (fixed: hand, body, head)
+Keys
+  Open drawers     B
+  Hold for cane    –
+```
+
+- **Keys belong to slots.** A tool slot's key equips that column, and pressing
+  it again cycles through it. A consumable slot's key eats the best food for
+  that slot's type. A key left empty means no key: nothing is bound.
+- **Tool types:** any of the tool types (weapon, ranged, staff, axe, pickaxe,
+  ...) or **Any**, which takes the type of the first tool put in it. A type the
+  player picks stays, even when the column is empty.
+- **Consumable types:** Health, Sanity, Hunger or **Any food**.
+- **Where new food goes:** a consumable slot already holding the same food,
+  else the slot whose type matches the food's best stat, else an Any food slot,
+  else the generic drawer.
+- **Placing food by hand:** any food the character can eat can go in any
+  consumable slot, whatever its type. The type only guides where new food lands.
+- **Gear** shows what's worn, so it's always there and can't be edited.
+- The layout is saved to the player's profile, so it's the same in every world.
+- Two slots with the same key both show a warning; the change isn't blocked.
 
 ## The pieces
 
@@ -58,3 +98,5 @@ milestone. When one is settled, the answer moves into the sections above.
 - **Controllers.** The drawers are built for mouse and keyboard. Should
   controllers get the drawers, or always fall back to the vanilla bar?
 - **Default keys.** H, J, K and B may clash with keys other popular mods use.
+- **Any food key.** What should the key on an Any food slot eat: the food that
+  best fills whichever stat is lowest, or just the top item in the slot?
