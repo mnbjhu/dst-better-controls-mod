@@ -55,7 +55,7 @@ Tools
   + Add slot
 Consumables
   Slot 1   key: H   type: Health    ▲ ▼  ✕
-  Slot 2   key: –   type: Any food  ▲ ▼  ✕
+  Slot 2   key: –   type: Other     ▲ ▼  ✕
   + Add slot
 Generic          columns: 4   − +
 Gear             (fixed: hand, body, head)
@@ -65,15 +65,22 @@ Keys
 ```
 
 - **Keys belong to slots.** A tool slot's key equips that column, and pressing
-  it again cycles through it. A consumable slot's key eats the best food for
-  that slot's type. A key left empty means no key: nothing is bound.
+  it again cycles through it. A Health, Sanity or Hunger slot's key eats the
+  best food for that stat. An Other slot's key eats the top item in that slot,
+  the same as right-clicking it. A key left empty means no key: nothing is
+  bound.
 - **Tool types:** any of the tool types (weapon, ranged, staff, axe, pickaxe,
   ...) or **Any**, which takes the type of the first tool put in it. A type the
   player picks stays, even when the column is empty.
-- **Consumable types:** Health, Sanity, Hunger or **Any food**.
-- **Where new food goes:** a consumable slot already holding the same food,
-  else the slot whose type matches the food's best stat, else an Any food slot,
-  else the generic drawer.
+- **Consumable types:** Health, Sanity, Hunger or **Other**. Other is for food
+  that doesn't belong under a stat, such as food with a downside.
+- **Where new food goes**, first match wins:
+  1. a consumable slot already holding the same food;
+  2. food with a downside (it lowers health or sanity, like monster meat): an
+     Other slot;
+  3. the slot whose type matches the food's best stat;
+  4. an Other slot;
+  5. the generic drawer.
 - **Placing food by hand:** any food the character can eat can go in any
   consumable slot, whatever its type. The type only guides where new food lands.
 - **Gear** shows what's worn, so it's always there and can't be edited.
@@ -98,5 +105,3 @@ milestone. When one is settled, the answer moves into the sections above.
 - **Controllers.** The drawers are built for mouse and keyboard. Should
   controllers get the drawers, or always fall back to the vanilla bar?
 - **Default keys.** H, J, K and B may clash with keys other popular mods use.
-- **Any food key.** What should the key on an Any food slot eat: the food that
-  best fills whichever stat is lowest, or just the top item in the slot?
