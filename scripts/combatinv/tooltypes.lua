@@ -165,6 +165,11 @@ local function Defaults()
     return list
 end
 
+-- The type tool column `index` starts with (weapon, ranged, staff, axe...).
+function ToolTypes.DefaultType(index)
+    return TYPES[index] ~= nil and TYPES[index].key or nil
+end
+
 local function Save()
     TheSim:SetPersistentString(SAVE_NAME, table.concat(slots, ","), false)
 end

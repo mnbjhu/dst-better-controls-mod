@@ -19,8 +19,39 @@ local BAD_PREFABS =
     humanmeat_dried = true,
 }
 
--- Same diet check vanilla uses to offer the EAT action (componentactions.lua).
+-- Diets the client can't see. Vanilla offers these characters the EAT action
+-- for anything their tags allow, then the server spits out what they refuse
+-- (eater.lua PrefersToEat), so the tag check alone lets the food through.
+local REFUSES =
+{
+    -- Wigfrid: meat and sweets only (no veggies, berries, seeds...).
+    wathgrithr = function(item)
+        return not (item:HasTag("edible_MEAT") or item:HasTag("edible_GOODIES"))
+    end,
+    -- Warly: cooked dishes only (crock pot food, candy, festival food).
+    warly = function(item)
+        return not (item:HasTag("preparedfood") or item:HasTag("pre-preparedfood"))
+    end,
+}
+
+-- How much of each stat a character actually gets from food.
+-- Wormwood heals nothing from eating (healing items still work).
+local ABSORPTION =
+{
+    wormwood = { health = 0, sanity = 1, hunger = 1 },
+}
+
+-- Same diet check vanilla uses to offer the EAT action (componentactions.lua),
+-- plus the server-side refusals above.
 local function CanEat(player, item)
+    -- Fruitcake: no player will eat it (eater.lua).
+    if item.prefab == "winter_food4" then
+        return false
+    end
+    local refuses = REFUSES[player.prefab]
+    if refuses ~= nil and refuses(item) then
+        return false
+    end
     for _, group in pairs(FOODGROUP) do
         if player:HasTag(group.name .. "_eater") then
             for _, foodtype in ipairs(group.types) do
@@ -36,6 +67,20 @@ local function CanEat(player, item)
         end
     end
     return false
+end
+
+-- What eating the item gives this character (freshness and absorption applied).
+local function FoodValues(player, item, food)
+    local values = FoodDB.ApplyFreshness(item, food)
+    local absorption = ABSORPTION[player.prefab]
+    if absorption ~= nil then
+        local scaled = {}
+        for stat, value in pairs(values) do
+            scaled[stat] = value * (absorption[stat] or 1)
+        end
+        values = scaled
+    end
+    return values
 end
 
 local function IsBadFood(item, values)
@@ -68,7 +113,7 @@ local function GetEffect(player, item)
     if food == nil or not CanEat(player, item) then
         return nil
     end
-    local values = FoodDB.ApplyFreshness(item, food)
+    local values = FoodValues(player, item, food)
     if IsBadFood(item, values) then
         return nil
     end
@@ -140,10 +185,14 @@ function QuickEat.Eat(stat)
 end
 
 -- Which food box an item belongs in: "health", "sanity", "hunger" or "bad".
--- nil means it isn't food as far as the HUD is concerned (seeds, unknown edibles).
+-- nil means it isn't food as far as the HUD is concerned: seeds, unknown
+-- edibles, and anything this character can't eat (it goes in generic).
 function QuickEat.GetFoodGroup(player, item)
     if FoodDB.GetHealAmount(item.prefab) ~= nil then
         return "health"
+    end
+    if not CanEat(player, item) then
+        return nil
     end
     local food = FoodDB.Get(item.prefab)
     if food == nil then
@@ -152,10 +201,7 @@ function QuickEat.GetFoodGroup(player, item)
         end
         return nil
     end
-    if not CanEat(player, item) then
-        return "bad"
-    end
-    local values = FoodDB.ApplyFreshness(item, food)
+    local values = FoodValues(player, item, food)
     if IsBadFood(item, values) then
         return "bad"
     end
@@ -179,7 +225,7 @@ function QuickEat.GetFoodColumn(player, item)
     end
     local food = FoodDB.Get(item.prefab)
     if food ~= nil then
-        local values = FoodDB.ApplyFreshness(item, food)
+        local values = FoodValues(player, item, food)
         local best, best_value = "hunger", 0
         for _, stat in ipairs(STATS) do
             if values[stat] > best_value then

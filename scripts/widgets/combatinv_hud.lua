@@ -1,6 +1,5 @@
 -- The grouped inventory HUD: a row of vanilla-style drawers along the bottom of
--- the screen (tools, food, gear, generic), plus pickup popups. Replaces the
--- vanilla inventory bar.
+-- the screen (tools, food, gear, generic). Replaces the vanilla inventory bar.
 --
 -- The drawers show layout.lua's columns: items stay where they were put. All
 -- drawers are the same height, the tallest column plus one free row to drop
@@ -10,7 +9,9 @@
 -- Clicks follow vanilla's inventory slots:
 --   left: pick up (Ctrl: half the stack); holding an item: put it down here
 --   right: use (equip, eat, wear...); holding an item: use it on this one
---   Shift + left: store in the open chest. Shift + right: drop.
+--   Shift + left: store in the open chest; with nothing open, move the item
+--     between its use column and the generic drawer. Shift + right: drop.
+-- Hovering an item shows vanilla's own text (name and right-click action).
 -- Putting an item down:
 --   lifted from the drawers: it moves to this cell (swapping with the item
 --     there if that one fits the cell it came from)
@@ -23,6 +24,9 @@ local Image = require("widgets/image")
 local Text = require("widgets/text")
 local ItemTile = require("widgets/itemtile")
 local TEMPLATES = require("widgets/redux/templates")
+-- The inventory bar's portrait button comes from the older templates (its
+-- square paper button, highlight and hover text), not the redux ones.
+local OLD_TEMPLATES = require("widgets/templates")
 
 local Util = require("combatinv/util")
 local HandSlot = require("combatinv/handslot")
@@ -63,8 +67,6 @@ local STAGGER = 0.07      -- each drawer starts this fraction of the time after 
 local OVERSHOOT = 1.9     -- how far past fully open the spring throws (ease-out-back)
 local FLY_TIME = 0.3      -- pickup icon flying into its slot (vanilla's timing)
 
-local POPUP_TIME = 1.6
-local POPUP_RISE = 80
 
 local EQUIP_BG =
 {
@@ -110,7 +112,6 @@ end
 local CombatHud = Class(Widget, function(self, owner, options)
     Widget._ctor(self, "CombatInventoryHud")
     self.owner = owner
-    self.food_keys = options.food_keys or {}
     self.inventory_key = options.inventory_key or "B"
     ART_ATLAS = options.art_atlas
 
@@ -122,16 +123,12 @@ local CombatHud = Class(Widget, function(self, owner, options)
     self:SetScale(BAR_SCALE)
     self:SetPosition(0, BAR_OFFSET)
     self.root = self:AddChild(Widget("drawers"))
-    self.popup_root = self:AddChild(Widget("popups"))
     self.drawers = {}
     self.records = {}             -- every item slot, in display order
     self.anim_slot = {}           -- item -> the one visible slot pickups fly to
     self.flights = {}             -- pickups waiting for their slot to exist
-    self.popups = {}
-    self.popup_y = SLOT_Y + 90
     self.signature = nil
     self.locations = {}
-    self.totals = nil
     self.timer = 0
 
     -- Auto-tools and attack switching use items in the order of the drawers.
@@ -172,7 +169,6 @@ end)
 
 function CombatHud:OnUpdate(dt)
     self:Animate(dt)
-    self:UpdatePopups(dt)
     self.timer = self.timer + dt
     if self.timer >= REFRESH_PERIOD then
         self.timer = 0
@@ -224,7 +220,6 @@ function CombatHud:Refresh(force)
     end
     local model = Categories.Build(player)
     self.locations = model.locations
-    self:CheckPickups(model)
     Layout.Sync(player, self:Lifted())
 
     local parts = { Layout.Version(), tostring(self:GetTarget() ~= nil), GUIDOf(Util.Real(inventory:GetActiveItem())) }
@@ -363,7 +358,6 @@ function CombatHud:PlaceDrawers()
         end
         top = math.max(top, SLOT_Y + PLANK_TOP + rise)
     end
-    self.popup_y = top + 30
     if visibility_changed then
         self:ChooseAnimSlots()
     end
@@ -615,9 +609,11 @@ local function HasInventoryAction(player, item)
 end
 
 -- A cell showing an item, with vanilla's clicks. spec:
---   cell            where a held item put down here goes (see PutDown)
---   use, use_hint   what right-click does (nil: nothing)
---   bg, in_hand, hotkey
+--   cell      where a held item put down here goes (see PutDown)
+--   use       what right-click does (nil: nothing)
+--   bg, in_hand
+-- Shift + left: with a chest open, store the item in it (as vanilla). With
+-- nothing open, move it between its use column and the generic drawer.
 function CombatHud:ItemCell(item, spec)
     local player = self.owner
     local inventory = player.replica.inventory
@@ -627,7 +623,6 @@ function CombatHud:ItemCell(item, spec)
     end
 
     local clicks = {}
-    local hints = { left = "Pick up", right = spec.use_hint, shift_right = "Drop" }
     clicks.left = function()
         if holding() then
             self:PutDown(spec.cell, item)
@@ -636,7 +631,6 @@ function CombatHud:ItemCell(item, spec)
         end
     end
     if item.replica.stackable ~= nil then
-        hints.ctrl_left = "Pick up half"
         clicks.ctrl_left = function()
             if holding() then
                 self:PutDown(spec.cell, item)
@@ -658,26 +652,55 @@ function CombatHud:ItemCell(item, spec)
             inventory:DropItemFromInvTile(item)
         end
     end
-    if self:GetTarget() ~= nil and entry ~= nil and entry.where ~= "equip" then
-        hints.shift_left = "Store"
-        clicks.shift_left = function()
-            if not holding() then
+    clicks.shift_left = function()
+        if holding() then
+            self:PutDown(spec.cell, item)
+        elseif self:GetTarget() ~= nil then
+            if entry ~= nil and entry.where ~= "equip" then
                 self:Store(item)
             end
+        else
+            self:QuickMove(item)
         end
     end
     return {
         item = item,
         bg = spec.bg,
         in_hand = spec.in_hand,
-        hotkey = spec.hotkey,
         clicks = clicks,
-        hints = hints,
     }
 end
 
+-- Shift-click with nothing open: between a use column and the generic drawer.
+-- Worn gear comes off into the generic drawer (if there's room for it).
+function CombatHud:QuickMove(item)
+    local player = self.owner
+    local entry = self.locations[item]
+    if entry ~= nil and entry.where == "equip" and not Layout.Has(item) then
+        if Util.HasRoomFor(player, item) then
+            local generic = Layout.Columns("generic")
+            local shortest = 1
+            for c, column in ipairs(generic) do
+                if #column < #generic[shortest] then shortest = c end
+            end
+            Layout.Expect(item, "generic", shortest, #generic[shortest] + 1)
+            Util.UseItem(player, item)
+            ClickSound()
+        else
+            NegativeSound()
+        end
+        return
+    end
+    if Layout.QuickMove(player, item) then
+        ClickSound()
+        self:Refresh(true)
+    else
+        NegativeSound()
+    end
+end
+
 -- A cell with nothing in it: a place to put the held item down.
--- spec: cell, empty_label, tooltip, bg, hotkey.
+-- spec: cell, art, empty_label, bg.
 function CombatHud:EmptyCell(spec)
     local inventory = self.owner.replica.inventory
     local function put_down()
@@ -688,9 +711,7 @@ function CombatHud:EmptyCell(spec)
     return {
         empty_label = spec.empty_label,
         art = spec.art,
-        tooltip = spec.tooltip,
         bg = spec.bg,
-        hotkey = spec.hotkey,
         clicks = { left = put_down, right = put_down },
     }
 end
@@ -699,8 +720,7 @@ end
 function CombatHud:EquipUse(item)
     local player = self.owner
     local in_hand = item == Util.GetHandItem(player)
-    return function() HandSlot.SetHand(player, not in_hand and item or nil) end,
-        in_hand and "Put away" or "Equip", in_hand
+    return function() HandSlot.SetHand(player, not in_hand and item or nil) end, in_hand
 end
 
 -- Right-click for anything else: its first inventory action, if it has one.
@@ -708,38 +728,34 @@ function CombatHud:ActionUse(item)
     local player = self.owner
     local action = HasInventoryAction(player, item)
     if action == nil then
-        return nil, nil
+        return nil
     end
-    return function() Util.UseItem(player, item) end, action:GetActionString()
+    return function() Util.UseItem(player, item) end
 end
 
 -- Any item in a drawer column, by what it is.
 function CombatHud:ColumnItemCell(section, item, cell, top_of_tools)
     local player = self.owner
     if Util.IsHandItem(item) then
-        local use, use_hint, in_hand = self:EquipUse(item)
+        local use, in_hand = self:EquipUse(item)
         if top_of_tools ~= nil and not (in_hand and #Layout.Columns("tools")[top_of_tools] == 1) then
             -- The top of a tool column works like its number key.
-            use_hint = in_hand and "Next" or "Equip"
             use = function() Layout.EquipColumn(top_of_tools) end
         end
-        return self:ItemCell(item, { cell = cell, use = use, use_hint = use_hint, in_hand = in_hand })
+        return self:ItemCell(item, { cell = cell, use = use, in_hand = in_hand })
     elseif section == "food" then
         local bad = QuickEat.GetFoodGroup(player, item) == "bad"
         return self:ItemCell(item, {
             cell = cell,
             use = not bad and function() QuickEat.EatItem(player, item) end or nil,
-            use_hint = not bad and "Eat" or nil,
         })
     elseif item.replica.equippable ~= nil then
         return self:ItemCell(item, {
             cell = cell,
             use = function() Util.UseItem(player, item) end,
-            use_hint = "Wear",
         })
     end
-    local use, use_hint = self:ActionUse(item)
-    return self:ItemCell(item, { cell = cell, use = use, use_hint = use_hint })
+    return self:ItemCell(item, { cell = cell, use = self:ActionUse(item) })
 end
 
 -- A worn-gear cell (the gear drawer's top row).
@@ -747,7 +763,7 @@ function CombatHud:WornCell(eslot, item)
     local player = self.owner
     local cell = { eslot = eslot }
     if item == nil then
-        return self:EmptyCell({ cell = cell, bg = EQUIP_BG[eslot], tooltip = "Empty" })
+        return self:EmptyCell({ cell = cell, bg = EQUIP_BG[eslot] })
     end
     return self:ItemCell(item, {
         cell = cell,
@@ -757,7 +773,6 @@ function CombatHud:WornCell(eslot, item)
                 Util.UseItem(player, item)
             end
         end,
-        use_hint = "Take off",
     })
 end
 
@@ -887,12 +902,10 @@ function CombatHud:SectionCells(section, height)
                         local key = ToolTypes.GetSlots()[c]
                         spec.art = Art(key ~= nil and TOOL_ART[key] or (key == nil and GENERIC_TOOL_ART or nil))
                         spec.empty_label = spec.art == nil and Layout.ToolColumnLabel(c) or nil
-                        spec.tooltip = Layout.ToolColumnLabel(c) .. " column"
                     elseif row == 1 and section == "food" then
                         local key = Layout.FOOD_COLUMNS[c].key
                         spec.art = Art(FOOD_ART[key])
                         spec.empty_label = spec.art == nil and Layout.FOOD_COLUMNS[c].label or nil
-                        spec.tooltip = "No " .. key .. " food"
                     end
                     if index > #column then
                         -- Past the end: dropping here adds to the bottom.
@@ -913,18 +926,13 @@ function CombatHud:SectionCells(section, height)
                     cell.opts.available = true
                 end
             end
-            if row == 1 then
-                if section == "tools" then
-                    cell.opts.hotkey = ToolTypes.SlotHotkey(c)
-                elseif section == "food" then
-                    cell.opts.hotkey = self.food_keys[Layout.FOOD_COLUMNS[c].key]
-                end
-            end
             table.insert(cells, cell)
         end
     end
     return cells
 end
+
+local ShowInspectButton
 
 function CombatHud:Rebuild()
     local player = self.owner
@@ -949,6 +957,11 @@ function CombatHud:Rebuild()
     for _, spec in ipairs(specs) do
         spec.width = SectionWidth(spec.columns)
         total = total + spec.width
+    end
+    -- Vanilla's character portrait (inspect self) at the right end, as in its bar.
+    local inspect = ShowInspectButton()
+    if inspect then
+        total = total + LANE + W
     end
     local drawer = { x = 0, width = total, height = (height - 1) * STEP }
     drawer.widget = self.root:AddChild(Widget("drawer"))
@@ -975,6 +988,9 @@ function CombatHud:Rebuild()
             x = x + LANE
         end
     end
+    if inspect then
+        self:AddInspectButton(handle, x + LANE + W / 2)
+    end
     table.insert(self.drawers, drawer)
     local generic_drawer = drawer
     -- Top rows first, so a pickup flies to the top row when the item is there.
@@ -994,6 +1010,36 @@ function CombatHud:Rebuild()
     self:ChooseAnimSlots()
 end
 
+-- Vanilla shows the portrait unless a controller is in use or the game mode
+-- turns the avatar popup off (inventorybar.lua).
+ShowInspectButton = function()
+    return not TheInput:ControllerAttached() and not GetGameModeProperty("no_avatar_popup")
+end
+
+-- The character portrait vanilla puts at the right end of its bar: click it to
+-- inspect yourself (your character, skins and skill tree). Built as vanilla does.
+function CombatHud:AddInspectButton(parent, x)
+    local player = self.owner
+    local prefab = player.prefab
+    local image = "self_inspect_" .. prefab .. ".tex"
+    local atlas = "images/avatars/self_inspect_" .. prefab .. ".xml"
+    if softresolvefilepath(atlas) == nil then
+        -- As inventorybar.lua's (local) HUD_CHARACTERS: Wanda's lives in hud2.
+        atlas = prefab == "wanda" and "images/hud2.xml" or HUD_ATLAS
+    end
+    local button = parent:AddChild(OLD_TEMPLATES.IconButton(atlas, image, STRINGS.UI.HUD.INSPECT_SELF, false, false,
+        function()
+            if player.HUD ~= nil then
+                player.HUD:InspectSelf()
+            end
+        end, nil, "self_inspect_mod.tex"))
+    button.icon:SetScale(.7)
+    button.icon:SetPosition(-4, 6)
+    button:SetScale(1.25)
+    button:SetPosition(x, SLOT_Y - 7)
+    self.inspect_button = button
+end
+
 -- Deposit and Take all, on top of the generic drawer while a chest is open.
 -- They're children of the drawer, so they ride up with it.
 function CombatHud:AddChestButtons(drawer)
@@ -1010,56 +1056,6 @@ function CombatHud:AddChestButtons(drawer)
         button:SetTextSize(24)
         button:SetPosition(right - width / 2, y)
         right = right - width - 8
-    end
-end
-
---------------------------------------------------------------------------
--- Pickup popups
---------------------------------------------------------------------------
-
-function CombatHud:CheckPickups(model)
-    local previous = self.totals
-    self.totals = model.totals
-    if previous == nil then
-        return -- first look: everything is "new"
-    end
-    for prefab, count in pairs(model.totals) do
-        local gained = count - (previous[prefab] or 0)
-        if gained > 0 and model.materials[prefab] then
-            local example = model.examples[prefab]
-            local name = example ~= nil and example:GetDisplayName() or prefab
-            self:ShowPickup(prefab, name, gained)
-        end
-    end
-end
-
-function CombatHud:ShowPickup(prefab, name, gained)
-    for _, popup in ipairs(self.popups) do
-        if popup.prefab == prefab and popup.age < POPUP_TIME / 2 then
-            popup.count = popup.count + gained
-            popup.text:SetString("+" .. popup.count .. " " .. name)
-            popup.age = 0
-            return
-        end
-    end
-    local text = self.popup_root:AddChild(Text(NUMBERFONT, 44, "+" .. gained .. " " .. name))
-    text:SetColour(unpack(ACCENT))
-    table.insert(self.popups, { prefab = prefab, count = gained, text = text, age = 0 })
-end
-
-function CombatHud:UpdatePopups(dt)
-    for i = #self.popups, 1, -1 do
-        local popup = self.popups[i]
-        popup.age = popup.age + dt
-        if popup.age >= POPUP_TIME then
-            popup.text:Kill()
-            table.remove(self.popups, i)
-        else
-            local t = popup.age / POPUP_TIME
-            popup.text:SetPosition(0, self.popup_y + (i - 1) * 44 + t * POPUP_RISE)
-            local r, g, b = unpack(ACCENT)
-            popup.text:SetColour(r, g, b, 1 - t * t)
-        end
     end
 end
 

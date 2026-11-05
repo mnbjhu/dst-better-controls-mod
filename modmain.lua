@@ -96,12 +96,6 @@ if GetModConfigData("grouped_hud") then
     local function KeyLabel(option)
         return (GetModConfigData(option):gsub("^KEY_", ""))
     end
-    local food_keys =
-    {
-        health = KeyLabel("eat_health_key"),
-        sanity = KeyLabel("eat_sanity_key"),
-        hunger = KeyLabel("eat_hunger_key"),
-    }
 
     AddClassPostConstruct("widgets/controls", function(self)
         local art_atlas = MODROOT .. "images/combatinv_slots.xml"
@@ -109,7 +103,7 @@ if GetModConfigData("grouped_hud") then
             print("[CombatInventory] slot art missing, using text labels: " .. art_atlas)
             art_atlas = nil
         end
-        HudMode.Install(self, CombatHud, { food_keys = food_keys, inventory_key = KeyLabel("inventory_key"), art_atlas = art_atlas })
+        HudMode.Install(self, CombatHud, { inventory_key = KeyLabel("inventory_key"), art_atlas = art_atlas })
     end)
     G.TheInput:AddKeyDownHandler(GetKey("inventory_key"), HudMode.Toggle)
 

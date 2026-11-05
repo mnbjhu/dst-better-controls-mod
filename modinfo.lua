@@ -14,13 +14,15 @@ description = [[Button-driven hand slot and quick-eat.
   take the type of the first tool put in them.
 - B springs the drawers up to show everything you carry. They also open
   with chests: Shift-click to store, or use Deposit and Take all.
+  With nothing open, Shift-click moves an item between its column and
+  the generic drawer.
   Shift + B switches to the vanilla bar and back.
 - Clicks work like vanilla: left picks up, right uses. Something picked
   up with a full inventory can be clicked onto an item to swap it out.
 
 Client-only: works on any server.]]
 author = "James"
-version = "0.8.6"
+version = "0.8.8"
 api_version = 10
 
 dst_compatible = true

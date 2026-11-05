@@ -325,9 +325,32 @@ function Layout.Sync(player, lifted)
         end
     end
 
+    -- Food columns only hold what this character will eat: anything else
+    -- (veggies for Wigfrid, raw food for Warly...) moves to generic.
+    for _, column in ipairs(columns.food) do
+        for i = #column, 1, -1 do
+            local item = column[i]
+            if not IsFood(player, item) then
+                Remove(item)
+                Insert(item, "generic", ShortestGeneric())
+            end
+        end
+    end
+
     for item, ghost in pairs(ghosts) do
         if not item:IsValid() or GetTime() - ghost.time > GHOST_TIME then
             ghosts[item] = nil
+        end
+    end
+
+    -- A typed tool column that's been emptied goes back to its default type
+    -- (a tool put in an empty column gives it that tool's type until then).
+    for c, column in ipairs(columns.tools) do
+        local key = SetToolType(c)
+        local default = ToolTypes.DefaultType(c)
+        if #column == 0 and key ~= nil and default ~= nil and key ~= default then
+            ToolTypes.SetType(c, default)
+            Changed()
         end
     end
 
@@ -379,6 +402,30 @@ function Layout.Move(player, item, section, c, index)
     Remove(item)
     Insert(item, section, c, index)
     return true
+end
+
+-- Shift-click with no chest open: an item in a use column (tools, food, gear)
+-- moves to the bottom of the shortest generic column; an item in generic moves
+-- to where a pickup of it would go. Returns false if it has nowhere to go.
+function Layout.QuickMove(player, item)
+    local at = where[item]
+    if at == nil then
+        return false
+    end
+    local section, c
+    if at.section ~= "generic" then
+        section, c = "generic", ShortestGeneric()
+    elseif Util.IsHandItem(item) then
+        section, c = PlaceTool(item)
+    elseif IsFood(player, item) then
+        section, c = PlaceFood(player, item)
+    else
+        section, c = "gear", GearColumnOf(item)
+    end
+    if section == "generic" and at.section == "generic" or c == nil then
+        return false
+    end
+    return Layout.Move(player, item, section, c, #columns[section][c] + 1)
 end
 
 -- An item arriving from outside (the ground, a chest) should land here.
