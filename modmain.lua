@@ -15,8 +15,24 @@ local Travel = G.require("combatinv/travel")
 local Tools = G.require("combatinv/tools")
 local QuickEat = G.require("combatinv/quickeat")
 
+-- The key code for a key option, or nil when it's set to Off.
 local function GetKey(option)
-    return G[GetModConfigData(option)]
+    local name = GetModConfigData(option)
+    return name and G[name] or nil
+end
+
+-- Binds a key option's handlers; does nothing when the key is Off.
+local function OnKey(option, down, up)
+    local key = GetKey(option)
+    if key == nil then
+        return
+    end
+    if down ~= nil then
+        G.TheInput:AddKeyDownHandler(key, down)
+    end
+    if up ~= nil then
+        G.TheInput:AddKeyUpHandler(key, up)
+    end
 end
 
 -- Tools: the right tool for the target, and weapons for attacks.
@@ -35,15 +51,13 @@ if travel_mode ~= "off" then
     Travel.Install(env, travel_mode)
 end
 if travel_mode == "hold" then
-    local travel_key = GetKey("travel_key")
-    G.TheInput:AddKeyDownHandler(travel_key, Travel.HoldDown)
-    G.TheInput:AddKeyUpHandler(travel_key, Travel.HoldUp)
+    OnKey("travel_key", Travel.HoldDown, Travel.HoldUp)
 end
 
 -- Quick-eat, one key per stat.
-G.TheInput:AddKeyDownHandler(GetKey("eat_health_key"), function() QuickEat.Eat("health") end)
-G.TheInput:AddKeyDownHandler(GetKey("eat_sanity_key"), function() QuickEat.Eat("sanity") end)
-G.TheInput:AddKeyDownHandler(GetKey("eat_hunger_key"), function() QuickEat.Eat("hunger") end)
+OnKey("eat_health_key", function() QuickEat.Eat("health") end)
+OnKey("eat_sanity_key", function() QuickEat.Eat("sanity") end)
+OnKey("eat_hunger_key", function() QuickEat.Eat("hunger") end)
 
 -- Number keys replace vanilla's slot hotkeys.
 -- With the grouped HUD, each number equips that tool slot (1 = first slot), so
@@ -93,8 +107,10 @@ if GetModConfigData("grouped_hud") then
     G.require("combatinv/layout").Configure(GetModConfigData("tool_slots"))
     ToolTypes.SetNumberKeys(GetModConfigData("weapon_keys"))
 
+    -- "B" for KEY_B, or nil when the key is Off.
     local function KeyLabel(option)
-        return (GetModConfigData(option):gsub("^KEY_", ""))
+        local name = GetModConfigData(option)
+        return name and (name:gsub("^KEY_", "")) or nil
     end
 
     AddClassPostConstruct("widgets/controls", function(self)
@@ -105,7 +121,7 @@ if GetModConfigData("grouped_hud") then
         end
         HudMode.Install(self, CombatHud, { inventory_key = KeyLabel("inventory_key"), art_atlas = art_atlas })
     end)
-    G.TheInput:AddKeyDownHandler(GetKey("inventory_key"), HudMode.Toggle)
+    OnKey("inventory_key", HudMode.Toggle)
 
     AddClassPostConstruct("screens/playerhud", function(self)
         local OpenContainer = self.OpenContainer

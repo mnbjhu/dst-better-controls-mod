@@ -22,7 +22,7 @@ description = [[Button-driven hand slot and quick-eat.
 
 Client-only: works on any server.]]
 author = "James"
-version = "0.8.8"
+version = "0.8.9"
 api_version = 10
 
 dst_compatible = true
@@ -35,18 +35,22 @@ all_clients_require_mod = false
 -- modinfo.lua runs in an empty sandbox: no string, table or ipairs.
 -- Only plain syntax and operators work here.
 
--- Keys offered in every key option.
+-- Keys offered in every key option, after Off. The number row isn't offered:
+-- it belongs to the tool slots.
 local key_names =
 {
     "LSHIFT", "RSHIFT", "LALT", "TAB", "CAPSLOCK",
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
     "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
 }
 
+-- Off is stored as false: modmain registers nothing for it, so the key is
+-- left to vanilla and other mods.
 local function key_options()
-    local options = {}
+    local options = { { description = "Off", data = false, hover = "No key. Frees it for vanilla and other mods." } }
     for i = 1, #key_names do
-        options[i] = { description = key_names[i], data = "KEY_" .. key_names[i] }
+        options[i + 1] = { description = key_names[i], data = "KEY_" .. key_names[i] }
     end
     return options
 end
@@ -140,7 +144,7 @@ configuration_options =
         },
         default = 6,
     },
-    key_option("inventory_key", "Inventory key", "KEY_B", "Opens the drawers to show everything you carry. Shift + this key: vanilla bar."),
+    key_option("inventory_key", "Inventory key", "KEY_B", "Opens the drawers to show everything you carry. Shift + this key: vanilla bar. Off: the drawers only open with chests."),
     key_option("eat_health_key", "Quick-eat: health", "KEY_H"),
     key_option("eat_sanity_key", "Quick-eat: sanity", "KEY_J"),
     key_option("eat_hunger_key", "Quick-eat: hunger", "KEY_K"),

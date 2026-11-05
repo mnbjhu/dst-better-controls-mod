@@ -28,7 +28,7 @@ including ones that don't have it installed.
   tool, and attacking switches to your weapon.
 - **Cane switching:** walking switches to your cane.
 
-All keys and features can be changed in the mod's configuration.
+All keys and features can be changed in the mod's configuration, and any key can be set to Off.
 
 ## Installing
 
