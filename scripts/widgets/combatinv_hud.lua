@@ -907,9 +907,9 @@ function CombatHud:SectionCells(section, height)
                         spec.art = Art(key ~= nil and TOOL_ART[key] or (key == nil and GENERIC_TOOL_ART or nil))
                         spec.empty_label = spec.art == nil and Layout.ToolColumnLabel(c) or nil
                     elseif row == 1 and section == "food" then
-                        local key = Layout.FOOD_COLUMNS[c].key
+                        local key, label = Layout.FoodColumn(c)
                         spec.art = Art(FOOD_ART[key])
-                        spec.empty_label = spec.art == nil and Layout.FOOD_COLUMNS[c].label or nil
+                        spec.empty_label = spec.art == nil and label or nil
                     end
                     if index > #column then
                         -- Past the end: dropping here adds to the bottom.
@@ -947,11 +947,14 @@ function CombatHud:Rebuild()
     local height = Layout.Height()
     local specs = {}
     for _, section in ipairs(SECTIONS) do
-        table.insert(specs, {
-            section = section,
-            columns = #Layout.Columns(section),
-            cells = self:SectionCells(section, height),
-        })
+        -- A section with no slots (no tools or no consumables) isn't drawn.
+        if #Layout.Columns(section) > 0 then
+            table.insert(specs, {
+                section = section,
+                columns = #Layout.Columns(section),
+                cells = self:SectionCells(section, height),
+            })
+        end
     end
 
     -- One connected box: vanilla's end ornaments, a stretched middle, and the

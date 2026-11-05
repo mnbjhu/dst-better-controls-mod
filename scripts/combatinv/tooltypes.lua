@@ -1,17 +1,16 @@
 -- Tool types and the tool drawer's slots.
 --
 -- Every hand item belongs to one or more types (a Pick/Axe is both "axe" and
--- "pick"). The tool drawer has a fixed number of slots, each showing one type.
--- Dropping a hand item on a slot gives that slot the item's type. The layout is
--- saved on this computer, so it survives restarts and works on any server.
+-- "pick"). Each tool slot shows one type, or is an Any slot. Dropping a hand
+-- item on an empty typed slot gives that slot the item's type until it's emptied.
+-- The slots themselves are saved by slots.lua.
 
 local Util = require("combatinv/util")
 local HandSlot = require("combatinv/handslot")
 local Tools = require("combatinv/tools")
+local Slots = require("combatinv/slots")
 
 local ToolTypes = {}
-
-local SAVE_NAME = "combatinv_toolslots"
 
 -- Hand items faster than this are travel items (matches handslot.lua).
 local TRAVEL_SPEED_MIN = 1.15
@@ -150,84 +149,34 @@ function ToolTypes.Representative(player, key, items, hand)
 end
 
 --------------------------------------------------------------------------
--- Slot layout
+-- Tool slots (saved in slots.lua)
 --------------------------------------------------------------------------
 
-local slot_count = 6
-local slots = nil -- list of type keys, one per slot
-
--- The first few tool columns have a type; the layout makes the rest generic.
-local function Defaults()
+-- The type each tool slot shows now, by index: the type a dropped tool gave it,
+-- else its own type, or nil for an Any slot (which takes the type of the first
+-- tool put in it). Not a sequence: use numeric indices up to
+-- ToolTypes.SlotCount(), not ipairs.
+function ToolTypes.GetSlots()
     local list = {}
-    for i = 1, slot_count do
-        list[i] = TYPES[i] ~= nil and TYPES[i].key or nil
+    for i, slot in ipairs(Slots.List("tools")) do
+        list[i] = slot.dropped or (slot.type ~= "any" and slot.type or nil)
     end
     return list
 end
 
--- The type tool column `index` starts with (weapon, ranged, staff, axe...).
-function ToolTypes.DefaultType(index)
-    return TYPES[index] ~= nil and TYPES[index].key or nil
+function ToolTypes.SlotCount()
+    return #Slots.List("tools")
 end
 
-local function Save()
-    TheSim:SetPersistentString(SAVE_NAME, table.concat(slots, ","), false)
-end
-
-local function Load()
-    slots = Defaults()
-    TheSim:GetPersistentString(SAVE_NAME, function(success, str)
-        if not success or type(str) ~= "string" or str == "" then
-            return
-        end
-        local saved = {}
-        for key in str:gmatch("[^,]+") do
-            table.insert(saved, key)
-        end
-        -- Keep the saved types that fit; new slots (count raised) keep defaults
-        -- unless that type is already used by a saved slot.
-        local used = {}
-        for i = 1, slot_count do
-            if saved[i] ~= nil then
-                slots[i] = saved[i]
-                used[saved[i]] = true
-            end
-        end
-        for i = #saved + 1, slot_count do
-            if used[slots[i]] then
-                for _, t in ipairs(TYPES) do
-                    if not used[t.key] then
-                        slots[i] = t.key
-                        break
-                    end
-                end
-            end
-            used[slots[i]] = true
-        end
-    end)
-end
-
-function ToolTypes.SetSlotCount(count)
-    slot_count = math.max(1, math.min(#TYPES, count or slot_count))
-    slots = nil
-end
-
-function ToolTypes.GetSlots()
-    if slots == nil then
-        Load()
-    end
-    return slots
-end
-
--- Gives typed tool column `index` the type `key`.
+-- Typed tool slot `index` shows type `key` until its column is emptied (see
+-- ToolTypes.Restore). Any slots are left alone.
 function ToolTypes.SetType(index, key)
-    local list = ToolTypes.GetSlots()
-    if list[index] == nil or list[index] == key then
-        return false
-    end
-    list[index] = key
-    Save()
-    return true
+    return Slots.SetDropped(index, key)
+end
+
+-- Tool slot `index` goes back to its own type. Returns true if it changed.
+function ToolTypes.Restore(index)
+    return Slots.SetDropped(index, nil)
 end
 
 -- The type to give a slot when this item is dropped on it: the first of the
@@ -237,8 +186,8 @@ function ToolTypes.TypeForDrop(item, index)
     local list = ToolTypes.GetSlots()
     for _, key in ipairs(keys) do
         local taken = false
-        for i, other in ipairs(list) do
-            if other == key and i ~= index then
+        for i = 1, ToolTypes.SlotCount() do
+            if list[i] == key and i ~= index then
                 taken = true
             end
         end

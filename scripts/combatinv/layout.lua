@@ -7,11 +7,12 @@
 --
 -- Every section is a set of columns, and every column is a gapless queue: the
 -- top item is the active one (number keys, auto-tools), and when it's used up
--- the rest move up. Sections:
---   tools    one column per tool slot. The first four have a type (weapon,
---            ranged, staff, axe by default); the rest are generic tool
---            columns that take on the type of whatever lands in them first.
---   food     HP, San, Hun.
+-- the rest move up. The player's slot list (slots.lua) says how many columns
+-- each section has and what type each one is. Sections:
+--   tools    one column per tool slot. A typed slot (weapon, axe...) takes the
+--            type of a tool dropped in it while empty, until it's emptied
+--            again; an Any slot takes on the type of whatever lands in it first.
+--   food     one column per consumable slot: health, sanity or hunger.
 --   gear     hand, body, head. The top row is what's worn (not part of the
 --            queue); carried armour and hats queue underneath.
 --   generic  anything. (New food is placed in the food columns, but the
@@ -19,9 +20,10 @@
 --
 -- Arriving items (Sync) are placed by these rules:
 --   hand items: a non-empty tool column of the same type, else an empty
---     column whose set type fits (a generic tool column fits anything),
+--     column whose set type fits (an Any column fits anything),
 --     else generic
---   food: a food column already holding the same food, else its best stat
+--   food: a food column already holding the same food, else the first column
+--     for its best stat, else generic
 --   gear: under its equip slot
 --   everything else: the shortest generic column
 -- An item that left recently (thrown boomerang, dropped and picked up again)
@@ -31,21 +33,14 @@ local Util = require("combatinv/util")
 local HandSlot = require("combatinv/handslot")
 local QuickEat = require("combatinv/quickeat")
 local ToolTypes = require("combatinv/tooltypes")
+local Slots = require("combatinv/slots")
 
 local Layout = {}
 
-local FOOD_COLUMNS =
-{
-    { key = "health", label = "HP" },
-    { key = "sanity", label = "San" },
-    { key = "hunger", label = "Hun" },
-}
+local FOOD_LABELS = { health = "HP", sanity = "San", hunger = "Hun" }
 local GEAR_SLOTS = { EQUIPSLOTS.HANDS, EQUIPSLOTS.BODY, EQUIPSLOTS.HEAD }
-local GENERIC_COLUMNS = 4
-local MAX_TYPED_TOOLS = 4
 local GHOST_TIME = 60       -- seconds an item's old cell is remembered
 
-local tool_count = 6
 local columns = nil         -- section -> list of columns (lists of items)
 local where = {}            -- item -> { section = s, col = c }
 local ghosts = {}           -- item -> { section, col, index, time }
@@ -55,10 +50,10 @@ local version = 0
 
 local function Reset()
     columns = { tools = {}, food = {}, gear = {}, generic = {} }
-    for c = 1, tool_count do columns.tools[c] = {} end
-    for c = 1, #FOOD_COLUMNS do columns.food[c] = {} end
+    for c = 1, ToolTypes.SlotCount() do columns.tools[c] = {} end
+    for c = 1, #Slots.List("food") do columns.food[c] = {} end
     for c = 1, #GEAR_SLOTS do columns.gear[c] = {} end
-    for c = 1, GENERIC_COLUMNS do columns.generic[c] = {} end
+    for c = 1, Slots.GenericColumns() do columns.generic[c] = {} end
     where = {}
     ghosts = {}
     pending = nil
@@ -66,9 +61,8 @@ local function Reset()
     version = version + 1
 end
 
-function Layout.Configure(count)
-    tool_count = math.max(1, count or tool_count)
-    ToolTypes.SetSlotCount(math.min(MAX_TYPED_TOOLS, tool_count))
+-- Rebuilds the columns from the slot list (all items are placed afresh).
+function Layout.Configure()
     Reset()
 end
 
@@ -211,12 +205,13 @@ local function PlaceFood(player, item)
         end
     end
     local key = QuickEat.GetFoodColumn(player, item)
-    for c, food in ipairs(FOOD_COLUMNS) do
-        if food.key == key then
+    for c, slot in ipairs(Slots.List("food")) do
+        if slot.type == key then
             return "food", c
         end
     end
-    return "food", #FOOD_COLUMNS
+    -- No slot for its stat (or no food slots at all).
+    return "generic", ShortestGeneric()
 end
 
 local function AutoPlace(player, item)
@@ -343,13 +338,10 @@ function Layout.Sync(player, lifted)
         end
     end
 
-    -- A typed tool column that's been emptied goes back to its default type
+    -- A typed tool column that's been emptied goes back to its slot's type
     -- (a tool put in an empty column gives it that tool's type until then).
     for c, column in ipairs(columns.tools) do
-        local key = SetToolType(c)
-        local default = ToolTypes.DefaultType(c)
-        if #column == 0 and key ~= nil and default ~= nil and key ~= default then
-            ToolTypes.SetType(c, default)
+        if #column == 0 and ToolTypes.Restore(c) then
             Changed()
         end
     end
@@ -472,7 +464,15 @@ function Layout.ToolColumnLabel(c)
     return "Tool"
 end
 
-Layout.FOOD_COLUMNS = FOOD_COLUMNS
+-- Food column c's stat ("health", "sanity", "hunger") and its short label.
+function Layout.FoodColumn(c)
+    local slot = Slots.List("food")[c]
+    if slot == nil then
+        return nil, nil
+    end
+    return slot.type, FOOD_LABELS[slot.type]
+end
+
 Layout.GEAR_SLOTS = GEAR_SLOTS
 
 -- Carried items in drawer order: tool columns left to right, top to bottom,
