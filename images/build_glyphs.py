@@ -22,7 +22,8 @@ CELL = 57
 # per drawing: filled? and how much to widen its cut-out gaps (None = no gaps)
 STYLE = {'ranged': (False, 0), 'weapon': (True, None)}
 DEFAULT_STYLE = (True, 2)
-GUTTER = 4                        # empty pixels between cells, so smaller copies don't bleed
+GUTTER = 8                        # empty pixels between cells, so the smaller (mip) copies used at
+                                  # small UI scales don't bleed into each other
 FILL = 0.80                       # drawing's longest side, as a share of the slot
 ATLAS_W, ATLAS_H = 512, 256
 BLANK = os.path.join(mod_dir, 'images', 'slot_blank.png')
@@ -208,7 +209,11 @@ while True:
     padded = level if (pw, ph) == (w, h) else level.resize((pw, ph), Image.LANCZOS)
     mips.append((w, h, max(1, (w + 3) // 4) * 16, dxt5(padded.transpose(Image.FLIP_TOP_BOTTOM))))
     if w == 1 and h == 1: break
-    level = level.resize((max(1, w // 2), max(1, h // 2)), Image.LANCZOS)
+    # Smaller copies by exact 2x2 averaging of the premultiplied pixels. (Lanczos
+    # overshoots at hard edges, leaving colour in transparent texels; the game
+    # adds premultiplied colour straight onto the panel, so it showed as specks
+    # around the dividers at small UI scales.)
+    level = level.reduce(2) if w % 2 == 0 and h % 2 == 0 else level.resize((max(1, w // 2), max(1, h // 2)), Image.BOX)
 header = (2 << 4) | (1 << 9) | (len(mips) << 13) | (3 << 18) | (0xFFF << 20)
 out = bytearray(b'KTEX') + struct.pack('<I', header)
 for w, h, p, d in mips: out += struct.pack('<HHHI', w, h, p, len(d))
