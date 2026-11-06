@@ -57,7 +57,7 @@ Consumables
   Slot 1   key: H   type: Health    ▲ ▼  ✕
   Slot 2   key: –   type: Other     ▲ ▼  ✕
   + Add slot
-Generic          columns: 4   − +
+Supplies         columns: 4   − +
 Gear             (fixed: hand, body, head)
 Keys
   Open drawers     B
@@ -81,12 +81,32 @@ Keys
      Other slot;
   3. the slot whose type matches the food's best stat;
   4. an Other slot;
-  5. the generic drawer.
+  5. the Supplies drawer.
 - **Placing food by hand:** any food the character can eat can go in any
   consumable slot, whatever its type. The type only guides where new food lands.
 - **Gear** shows what's worn, so it's always there and can't be edited.
 - The layout is saved to the player's profile, so it's the same in every world.
 - Two slots with the same key both show a warning; the change isn't blocked.
+
+## The Supplies drawer
+
+Supplies holds everything that has no slot of its own. It's **one list**,
+laid out across its columns row by row, so the first items sit in the top row
+that shows while the drawers are closed.
+
+- **While the drawers are open, arrange freely.** An item dropped on an empty
+  cell goes exactly there, and gaps are allowed, so nothing moves under the
+  cursor. Dropped on another Supplies item, the two swap. Dropped on an item
+  from another section, it goes in there, and the items after it shift along
+  only as far as the next gap. An item used up or taken out leaves a gap, and
+  new pickups fill the first gap.
+- **When the drawers close, it squishes together.** The cells are read in
+  order, the gaps are dropped, and the drawer shrinks to fit.
+- **While closed,** new items go on the end and gaps close straight away.
+- Shift-click into Supplies adds to the end. Changing its column count in the
+  slot editor rewraps the list.
+- Partial stacks aren't merged when it squishes: that would move items on the
+  server.
 
 ## The pieces
 

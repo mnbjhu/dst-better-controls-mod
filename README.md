@@ -12,7 +12,8 @@ including ones that don't have it installed.
     rest take the type of the first tool put in them.
   - Food: health, sanity and hunger, sorted by what your character can eat.
   - Gear: hand, body and head. The top row is what you're wearing.
-  - Supplies: everything else (the generic drawer).
+  - Supplies: everything else. Arrange it freely while the drawers are open;
+    when they close, it squishes together with no gaps.
 
   Small engraved symbols sit within the vanilla wooden border, with slim
   forked dividers between sections. The symbols follow the layout when slots change.
