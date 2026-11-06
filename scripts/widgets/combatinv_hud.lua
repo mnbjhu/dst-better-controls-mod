@@ -262,6 +262,7 @@ function CombatHud:Refresh(force)
     end
     local model = Categories.Build(player)
     self.locations = model.locations
+    Layout.SetOpen(self.open)
     Layout.Sync(player, self:Lifted())
 
     local parts = { Layout.Version(), tostring(self:GetTarget() ~= nil), GUIDOf(Util.Real(inventory:GetActiveItem())) }
@@ -295,6 +296,7 @@ function CombatHud:Open()
         DrawerSound(true)
     end
     self.open = true
+    Layout.SetOpen(true)
     self.opened_by_container = false
 end
 
@@ -304,6 +306,8 @@ function CombatHud:Close()
     end
     self.open = false
     self.opened_by_container = false
+    -- Supplies squishes together as the drawers close.
+    Layout.SetOpen(false)
     if self.container ~= nil then
         self.container = nil
         self:Refresh(true)
@@ -324,6 +328,7 @@ function CombatHud:OpenFor(container)
     if not self.open then
         DrawerSound(true)
         self.open = true
+        Layout.SetOpen(true)
         self.opened_by_container = true
     end
     self:Refresh(true)
@@ -724,12 +729,7 @@ function CombatHud:QuickMove(item)
     local entry = self.locations[item]
     if entry ~= nil and entry.where == "equip" and not Layout.Has(item) then
         if Util.HasRoomFor(player, item) then
-            local generic = Layout.Columns("generic")
-            local shortest = 1
-            for c, column in ipairs(generic) do
-                if #column < #generic[shortest] then shortest = c end
-            end
-            Layout.Expect(item, "generic", shortest, #generic[shortest] + 1)
+            Layout.Expect(item, "generic")
             Util.UseItem(player, item)
             ClickSound()
         else
@@ -950,7 +950,8 @@ function CombatHud:SectionCells(section, height)
                 cell.item = Util.Real(inventory:GetEquippedItem(eslot))
                 cell.opts = self:WornCell(eslot, cell.item)
             else
-                local item = column[index]
+                -- (A gap in Supplies is false.)
+                local item = column[index] or nil
                 local target = { section = section, col = c, index = index }
                 if item ~= nil and item ~= lifted then
                     cell.item = item
@@ -968,8 +969,9 @@ function CombatHud:SectionCells(section, height)
                         spec.art = Art(FOOD_ART[key])
                         spec.empty_label = spec.art == nil and label or nil
                     end
-                    if index > #column then
+                    if index > #column and section ~= "generic" then
                         -- Past the end: dropping here adds to the bottom.
+                        -- (Supplies keeps the exact cell: it can have gaps.)
                         target.index = #column + 1
                     end
                     cell.opts = self:EmptyCell(spec)

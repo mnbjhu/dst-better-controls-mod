@@ -5,18 +5,21 @@
 -- is given a cell when it arrives and keeps it until it's used up, moved by
 -- the player, or leaves the inventory. Nothing is re-sorted.
 --
--- Every section is a set of columns, and every column is a gapless queue: the
--- top item is the active one (number keys, auto-tools), and when it's used up
--- the rest move up. The player's slot list (slots.lua) says how many columns
--- each section has and what type each one is. Sections:
+-- Tools, food and gear are sets of columns, and every column is a gapless
+-- queue: the top item is the active one (number keys, auto-tools), and when
+-- it's used up the rest move up. The player's slot list (slots.lua) says how
+-- many columns each section has and what type each one is. Sections:
 --   tools    one column per tool slot. A typed slot (weapon, axe...) takes the
 --            type of a tool dropped in it while empty, until it's emptied
 --            again; an Any slot takes on the type of whatever lands in it first.
 --   food     one column per consumable slot: health, sanity, hunger or other.
 --   gear     hand, body, head. The top row is what's worn (not part of the
 --            queue); carried armour and hats queue underneath.
---   generic  anything. (New food is placed in the food columns, but the
---            player can move it here.)
+--   generic  Supplies: anything. (New food is placed in the food columns, but
+--            the player can move it here.) Not columns but one list, shown
+--            row by row across its columns. While the drawers are open it
+--            can have gaps, so items stay where the player drops them; when
+--            they close, the gaps are squeezed out (Layout.SetOpen).
 --
 -- Arriving items (Sync) are placed by these rules:
 --   hand items: a non-empty tool column of the same type, else an empty
@@ -26,7 +29,7 @@
 --     downside goes in the first Other column; else the first column for its
 --     best stat; else the first Other column; else generic
 --   gear: under its equip slot
---   everything else: the shortest generic column
+--   everything else: generic, in its first gap or on the end
 -- An item that left recently (thrown boomerang, dropped and picked up again)
 -- goes back to where it was instead.
 
@@ -42,19 +45,21 @@ local FOOD_LABELS = { health = "HP", sanity = "San", hunger = "Hun", other = "Ot
 local GEAR_SLOTS = { EQUIPSLOTS.HANDS, EQUIPSLOTS.BODY, EQUIPSLOTS.HEAD }
 local GHOST_TIME = 60       -- seconds an item's old cell is remembered
 
-local columns = nil         -- section -> list of columns (lists of items)
-local where = {}            -- item -> { section = s, col = c }
+local columns = nil         -- section -> list of columns (lists of items); not generic
+local supplies = {}         -- generic: items in reading order; false is a gap (only while open)
+local drawers_open = false
+local where = {}            -- item -> { section = s, col = c } (generic: no col)
 local ghosts = {}           -- item -> { section, col, index, time }
 local pending = nil         -- { item, section, col, index }: where an incoming item goes
 local last_hand = nil
 local version = 0
 
 local function Reset()
-    columns = { tools = {}, food = {}, gear = {}, generic = {} }
+    columns = { tools = {}, food = {}, gear = {} }
     for c = 1, ToolTypes.SlotCount() do columns.tools[c] = {} end
     for c = 1, #Slots.List("food") do columns.food[c] = {} end
     for c = 1, #GEAR_SLOTS do columns.gear[c] = {} end
-    for c = 1, Slots.GenericColumns() do columns.generic[c] = {} end
+    supplies = {}
     where = {}
     ghosts = {}
     pending = nil
@@ -93,14 +98,8 @@ Slots.OnChanged(function(change)
         table.remove(list, change.index)
     elseif change.op == "move" then
         list[change.index], list[change.to] = list[change.to], list[change.index]
-    elseif change.op == "generic" then
-        while #columns.generic < change.to do
-            table.insert(columns.generic, {})
-        end
-        while #columns.generic > change.to do
-            Forget(table.remove(columns.generic))
-        end
     end
+    -- (A new Supplies column count just rewraps the list: nothing to do.)
     -- Column numbers moved: fix up where items think they are. Remembered
     -- cells of items that left may point at the wrong column now.
     if change.op ~= "type" and change.op ~= "key" then
@@ -188,7 +187,133 @@ end
 -- Placing and removing
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- Supplies (generic): one list, shown row by row
+--------------------------------------------------------------------------
+
+local function SuppliesWidth()
+    return math.max(1, Slots.GenericColumns())
+end
+
+-- The list position of the cell in column c, row `row`.
+local function SuppliesPos(c, row)
+    return (row - 1) * SuppliesWidth() + c
+end
+
+local function SuppliesIndexOf(item)
+    for i = 1, #supplies do
+        if supplies[i] == item then
+            return i
+        end
+    end
+    return nil
+end
+
+-- Gaps at the end are just empty cells: drop them.
+local function TrimSupplies()
+    while #supplies > 0 and not supplies[#supplies] do
+        supplies[#supplies] = nil
+    end
+end
+
+-- Puts an item in Supplies at list position `pos` (nil: the first gap, or the
+-- end). While the drawers are closed it's inserted, so the list stays gapless.
+-- While open, an empty cell takes it as it is; on an item, the items from
+-- there shift along as far as the next gap.
+local function InsertSupplies(item, pos)
+    if not drawers_open then
+        pos = math.max(1, math.min(pos or (#supplies + 1), #supplies + 1))
+        table.insert(supplies, pos, item)
+        return
+    end
+    if pos == nil then
+        pos = #supplies + 1
+        for i = 1, #supplies do
+            if not supplies[i] then
+                pos = i
+                break
+            end
+        end
+    end
+    pos = math.max(1, pos)
+    for i = #supplies + 1, pos - 1 do
+        supplies[i] = false
+    end
+    if supplies[pos] then
+        local gap = pos
+        while supplies[gap] do
+            gap = gap + 1
+        end
+        for i = gap, pos + 1, -1 do
+            supplies[i] = supplies[i - 1]
+        end
+    end
+    supplies[pos] = item
+end
+
+-- Takes an item out of Supplies; returns its position. While the drawers are
+-- open it leaves a gap.
+local function RemoveSupplies(item)
+    local i = SuppliesIndexOf(item)
+    if i == nil then
+        return nil
+    end
+    if drawers_open then
+        supplies[i] = false
+        TrimSupplies()
+    else
+        table.remove(supplies, i)
+    end
+    return i
+end
+
+-- Supplies as columns, for drawing: column c holds positions c, c + width,
+-- ... A gap is false.
+local function SuppliesColumns()
+    local width = SuppliesWidth()
+    local list = {}
+    for c = 1, width do
+        list[c] = {}
+    end
+    for i = 1, #supplies do
+        table.insert(list[(i - 1) % width + 1], supplies[i])
+    end
+    return list
+end
+
+-- The drawers opened or closed. Closing squeezes the gaps out of Supplies.
+function Layout.SetOpen(open)
+    open = open and true or false
+    if open == drawers_open then
+        return
+    end
+    drawers_open = open
+    if not open then
+        local list = {}
+        for i = 1, #supplies do
+            if supplies[i] then
+                table.insert(list, supplies[i])
+            end
+        end
+        if #list ~= #supplies then
+            supplies = list
+            Changed()
+        end
+    end
+end
+
+--------------------------------------------------------------------------
+-- Placing and removing
+--------------------------------------------------------------------------
+
+-- index: the place in the column, or for generic the list position.
 local function Insert(item, section, c, index)
+    if section == "generic" then
+        InsertSupplies(item, index)
+        where[item] = { section = "generic" }
+        Changed()
+        return
+    end
     local column = columns[section][c]
     index = math.max(1, math.min(index or (#column + 1), #column + 1))
     table.insert(column, index, item)
@@ -202,6 +327,15 @@ local function Remove(item)
     if at == nil then
         return nil
     end
+    if at.section == "generic" then
+        local i = RemoveSupplies(item)
+        where[item] = nil
+        if i == nil then
+            return nil
+        end
+        Changed()
+        return { section = "generic", index = i }
+    end
     local column = columns[at.section][at.col]
     for i, other in ipairs(column) do
         if other == item then
@@ -213,16 +347,6 @@ local function Remove(item)
     end
     where[item] = nil
     return nil
-end
-
-local function ShortestGeneric()
-    local best = 1
-    for c, column in ipairs(columns.generic) do
-        if #column < #columns.generic[best] then
-            best = c
-        end
-    end
-    return best
 end
 
 local function PlaceTool(item)
@@ -244,7 +368,7 @@ local function PlaceTool(item)
             end
         end
     end
-    return "generic", ShortestGeneric()
+    return "generic", nil
 end
 
 local function PlaceFood(player, item)
@@ -275,7 +399,7 @@ local function PlaceFood(player, item)
         return "food", c
     end
     -- No slot for its stat and no Other slot (or no food slots at all).
-    return "generic", ShortestGeneric()
+    return "generic", nil
 end
 
 local function AutoPlace(player, item)
@@ -288,7 +412,7 @@ local function AutoPlace(player, item)
     if gear ~= nil then
         return "gear", gear
     end
-    return "generic", ShortestGeneric()
+    return "generic", nil
 end
 
 local function Add(player, item)
@@ -391,7 +515,7 @@ function Layout.Sync(player, lifted)
             local item = column[i]
             if not IsFood(player, item) then
                 Remove(item)
-                Insert(item, "generic", ShortestGeneric())
+                Insert(item, "generic", nil)
             end
         end
     end
@@ -412,7 +536,7 @@ function Layout.Sync(player, lifted)
 
     -- The hand item broke: equip the next one in its column.
     local hand = Util.GetHandItem(player)
-    if refill ~= nil and hand == nil then
+    if refill ~= nil and hand == nil and refill.section ~= "generic" then
         local next_item = columns[refill.section][refill.col][refill.index]
         if next_item ~= nil and Util.IsHandItem(next_item) then
             HandSlot.SetHand(player, next_item)
@@ -425,12 +549,37 @@ end
 -- Moves made by the player
 --------------------------------------------------------------------------
 
--- Puts an item that's already in the layout at (section, c, index). Dropped on
--- another item, the two swap if that item fits the vacated cell, otherwise it
--- goes in front of it. Returns false if the column doesn't take it.
+-- Moves an item to Supplies list position `pos` (nil: the first gap, or the
+-- end). Within Supplies, dropped on another item the two swap; from another
+-- section it goes in there, pushing items along to the next gap.
+local function MoveToSupplies(item, pos)
+    local from = where[item]
+    if from.section == "generic" and pos ~= nil then
+        local i = SuppliesIndexOf(item)
+        if i == pos then
+            return true
+        end
+        if i ~= nil and supplies[pos] then
+            supplies[i], supplies[pos] = supplies[pos], supplies[i]
+            Changed()
+            return true
+        end
+    end
+    Remove(item)
+    Insert(item, "generic", nil, pos)
+    return true
+end
+
+-- Puts an item that's already in the layout at (section, c, index); for
+-- generic, (c, index) is the cell's column and row, or nil for the first gap.
+-- Dropped on another item, the two swap if that item fits the vacated cell,
+-- otherwise it goes in front of it. Returns false if the column doesn't take it.
 function Layout.Move(player, item, section, c, index)
     if where[item] == nil or not Layout.Accepts(player, section, c, item) then
         return false
+    end
+    if section == "generic" then
+        return MoveToSupplies(item, c ~= nil and index ~= nil and SuppliesPos(c, index) or nil)
     end
     -- An empty typed tool column takes on the type of the tool put in it.
     if section == "tools" and #columns.tools[c] == 0 and SetToolType(c) ~= nil then
@@ -439,7 +588,20 @@ function Layout.Move(player, item, section, c, index)
     local column = columns[section][c]
     local occupant = column[index]
     local from = where[item]
-    local from_column = columns[from.section][from.col]
+    -- From Supplies onto an item: that item takes its place there.
+    if from.section == "generic" and occupant ~= nil then
+        local i = SuppliesIndexOf(item)
+        if i ~= nil then
+            supplies[i] = occupant
+            column[index] = item
+            where[occupant] = { section = "generic" }
+            where[item] = { section = section, col = c }
+            Changed()
+            return true
+        end
+    end
+    -- (Supplies has no columns: from there it's a plain remove and insert.)
+    local from_column = from.section ~= "generic" and columns[from.section][from.col] or {}
     local from_index = nil
     for i, other in ipairs(from_column) do
         if other == item then
@@ -461,7 +623,7 @@ function Layout.Move(player, item, section, c, index)
 end
 
 -- Shift-click with no chest open: an item in a use column (tools, food, gear)
--- moves to the bottom of the shortest generic column; an item in generic moves
+-- moves to the first gap in Supplies, or its end; an item in generic moves
 -- to where a pickup of it would go. Returns false if it has nowhere to go.
 function Layout.QuickMove(player, item)
     local at = where[item]
@@ -470,7 +632,7 @@ function Layout.QuickMove(player, item)
     end
     local section, c
     if at.section ~= "generic" then
-        section, c = "generic", ShortestGeneric()
+        section, c = "generic", nil
     elseif Util.IsHandItem(item) then
         section, c = PlaceTool(item)
     elseif IsFood(player, item) then
@@ -478,14 +640,25 @@ function Layout.QuickMove(player, item)
     else
         section, c = "gear", GearColumnOf(item)
     end
-    if section == "generic" and at.section == "generic" or c == nil then
+    if section == "generic" then
+        if at.section == "generic" then
+            return false
+        end
+        return Layout.Move(player, item, "generic", nil, nil)
+    end
+    if c == nil then
         return false
     end
     return Layout.Move(player, item, section, c, #columns[section][c] + 1)
 end
 
--- An item arriving from outside (the ground, a chest) should land here.
+-- An item arriving from outside (the ground, a chest) should land here. For
+-- generic, (c, index) is a cell's column and row, or nil for the first gap.
 function Layout.Expect(item, section, c, index)
+    if section == "generic" then
+        index = c ~= nil and index ~= nil and SuppliesPos(c, index) or nil
+        c = nil
+    end
     pending = { item = item, section = section, col = c, index = index }
 end
 
@@ -497,9 +670,14 @@ end
 -- Reading the layout
 --------------------------------------------------------------------------
 
+-- A section's columns. Supplies is a list, so its columns are made from it:
+-- column c holds its items in row order, and a gap is false.
 function Layout.Columns(section)
     if columns == nil then
         Reset()
+    end
+    if section == "generic" then
+        return SuppliesColumns()
     end
     return columns[section]
 end
@@ -507,7 +685,12 @@ end
 -- Rows every drawer shows: the tallest column, plus one free row to drop into.
 function Layout.Height()
     local tallest = 1
+    local sections = {}
     for section, list in pairs(columns or {}) do
+        sections[section] = list
+    end
+    sections.generic = SuppliesColumns()
+    for section, list in pairs(sections) do
         for _, column in ipairs(list) do
             local length = #column + (section == "gear" and 1 or 0)
             tallest = math.max(tallest, length)
@@ -547,11 +730,14 @@ function Layout.Ordered()
     if columns == nil then
         return list
     end
-    for _, section in ipairs({ "tools", "generic" }) do
-        for _, column in ipairs(columns[section]) do
-            for _, item in ipairs(column) do
-                table.insert(list, item)
-            end
+    for _, column in ipairs(columns.tools) do
+        for _, item in ipairs(column) do
+            table.insert(list, item)
+        end
+    end
+    for i = 1, #supplies do
+        if supplies[i] then
+            table.insert(list, supplies[i])
         end
     end
     return list
