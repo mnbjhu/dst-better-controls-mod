@@ -600,7 +600,8 @@ function Layout.Move(player, item, section, c, index)
             return true
         end
     end
-    local from_column = columns[from.section][from.col] or {}
+    -- (Supplies has no columns: from there it's a plain remove and insert.)
+    local from_column = from.section ~= "generic" and columns[from.section][from.col] or {}
     local from_index = nil
     for i, other in ipairs(from_column) do
         if other == item then
